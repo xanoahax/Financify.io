@@ -252,11 +252,11 @@ export function SubscriptionsPage(): JSX.Element {
       <div className="stats-grid">
         <article className="card stat-card">
           <p className="muted">{t('Gesamtkosten (monatlich)', 'Total costs (monthly)')}</p>
-          <p className="stat-value">{formatMoney(totals.monthly, settings.currency, settings.decimals, settings.privacyHideAmounts)}</p>
+          <p className="stat-value">{formatMoney(totals.monthly, settings.currency, settings.privacyHideAmounts)}</p>
         </article>
         <article className="card stat-card">
           <p className="muted">{t('Gesamtkosten (jährlich)', 'Total costs (yearly)')}</p>
-          <p className="stat-value">{formatMoney(totals.yearly, settings.currency, settings.decimals, settings.privacyHideAmounts)}</p>
+          <p className="stat-value">{formatMoney(totals.yearly, settings.currency, settings.privacyHideAmounts)}</p>
         </article>
         <article className="card stat-card">
           <p className="muted">{t('Monatliche Abos', 'Monthly subscriptions')}</p>
@@ -425,7 +425,7 @@ export function SubscriptionsPage(): JSX.Element {
                     <strong>{item.name}</strong>
                     <small>{item.provider || item.category}</small>
                   </td>
-                  <td>{formatMoney(item.amount, settings.currency, settings.decimals, settings.privacyHideAmounts)}</td>
+                  <td>{formatMoney(item.amount, settings.currency, settings.privacyHideAmounts)}</td>
                   <td>{intervalLabel(item, settings.language)}</td>
                   <td>
                     <span className={`status-pill status-${item.status}`}>{statusLabel(item.status, settings.language)}</span>

@@ -3,6 +3,7 @@ import type { Settings, ShiftJobConfig, UiState } from '../types/models'
 const SETTINGS_KEY = 'financify.settings'
 const UI_STATE_KEY = 'financify.ui-state'
 const BACKGROUND_IMAGE_KEY = 'financify.background-image'
+const SKIPPED_UPDATE_VERSION_KEY = 'financify.updater.skipped-version'
 const LEGACY_MIGRATION_SHIFT_JOB_ID = 'job-legacy-foodaffairs'
 
 export const defaultSettings: Settings = {
@@ -16,7 +17,6 @@ export const defaultSettings: Settings = {
   backgroundImageBlurAmount: 8,
   reducedMotion: false,
   currency: 'EUR',
-  decimals: 2,
   shiftJobs: [],
   defaultShiftJobId: '',
   dateFormat: 'DD.MM.YYYY',
@@ -108,4 +108,25 @@ export function saveBackgroundImageDataUrl(dataUrl: string): void {
 
 export function clearBackgroundImageDataUrl(): void {
   window.localStorage.removeItem(BACKGROUND_IMAGE_KEY)
+}
+
+export function clearPersistedPreferences(): void {
+  window.localStorage.removeItem(SETTINGS_KEY)
+  window.localStorage.removeItem(UI_STATE_KEY)
+  clearBackgroundImageDataUrl()
+  window.localStorage.removeItem(SKIPPED_UPDATE_VERSION_KEY)
+}
+
+export function loadSkippedUpdateVersion(): string {
+  const raw = window.localStorage.getItem(SKIPPED_UPDATE_VERSION_KEY)
+  return typeof raw === 'string' ? raw : ''
+}
+
+export function saveSkippedUpdateVersion(version: string): void {
+  const normalized = version.trim()
+  if (!normalized) {
+    window.localStorage.removeItem(SKIPPED_UPDATE_VERSION_KEY)
+    return
+  }
+  window.localStorage.setItem(SKIPPED_UPDATE_VERSION_KEY, normalized)
 }

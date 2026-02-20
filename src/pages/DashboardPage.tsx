@@ -43,12 +43,12 @@ export function DashboardPage(): JSX.Element {
       <div className="stats-grid">
         <StatCard
           label={t('Abos pro Monat', 'Subscriptions per month')}
-          value={formatMoney(overview.monthlySubscriptions, settings.currency, settings.decimals, settings.privacyHideAmounts)}
+          value={formatMoney(overview.monthlySubscriptions, settings.currency, settings.privacyHideAmounts)}
           hint={t('Aktive und pausierte Abos', 'Active and paused subscriptions')}
         />
         <StatCard
           label={t('Einkommen diesen Monat', 'Income this month')}
-          value={formatMoney(overview.monthIncome, settings.currency, settings.decimals, settings.privacyHideAmounts)}
+          value={formatMoney(overview.monthIncome, settings.currency, settings.privacyHideAmounts)}
           hint={`${t('Vgl. Vormonat', 'vs previous month')}: ${toPercent(overview.incomeMoM)}`}
         />
         <article className="card stat-card">

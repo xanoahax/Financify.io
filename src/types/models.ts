@@ -81,7 +81,6 @@ export interface Settings {
   backgroundImageBlurAmount: number
   reducedMotion: boolean
   currency: string
-  decimals: number
   shiftJobs: ShiftJobConfig[]
   defaultShiftJobId: string
   dateFormat: 'DD.MM.YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-DD'
@@ -112,6 +111,13 @@ export interface ToastMessage {
   actionLabel?: string
   action?: () => void
   expiresInMs?: number
+}
+
+export interface UpdatePrompt {
+  currentVersion: string
+  version: string
+  body?: string
+  date?: string
 }
 
 export interface AppBackup {

@@ -1,12 +1,15 @@
 ﻿import { createContext, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
+  clearPersistedPreferences,
   clearBackgroundImageDataUrl,
   defaultSettings,
   defaultUiState,
   loadBackgroundImageDataUrl,
+  loadSkippedUpdateVersion,
   loadSettings,
   loadUiState,
   saveBackgroundImageDataUrl,
+  saveSkippedUpdateVersion,
   saveSettings,
   saveUiState,
 } from '../data/settingsStore'
@@ -34,9 +37,11 @@ import type {
   ShiftJobConfig,
   Subscription,
   ToastMessage,
+  UpdatePrompt,
   UiState,
 } from '../types/models'
 import { tx } from '../utils/i18n'
+import { isTauriRuntime } from '../utils/runtime'
 
 export interface AppContextValue {
   loading: boolean
@@ -47,6 +52,12 @@ export interface AppContextValue {
   backgroundImageDataUrl: string | null
   uiState: UiState
   toasts: ToastMessage[]
+  updatesSupported: boolean
+  isCheckingForUpdates: boolean
+  isInstallingUpdate: boolean
+  skippedUpdateVersion: string
+  updatePrompt: UpdatePrompt | null
+  updateCheckError: string | null
   setSettings: (changes: Partial<Settings>) => void
   setUiState: (changes: Partial<UiState>) => void
   setBackgroundImageFromFile: (file: File) => Promise<void>
@@ -62,6 +73,11 @@ export interface AppContextValue {
   deleteScenario: (id: string) => Promise<void>
   exportBackup: () => AppBackup
   importBackup: (payload: AppBackup, mode: 'replace' | 'merge') => Promise<void>
+  clearAllData: () => Promise<void>
+  checkForUpdates: (options?: { manual?: boolean }) => Promise<boolean>
+  installUpdate: () => Promise<void>
+  skipUpdateVersion: () => void
+  dismissUpdatePrompt: () => void
   dismissToast: (id: string) => void
 }
 
@@ -151,6 +167,15 @@ function normalizeImportedUiState(raw: unknown): UiState {
 
 const MAX_BACKGROUND_FILE_BYTES = 3 * 1024 * 1024
 
+interface UpdaterHandle {
+  currentVersion: string
+  version: string
+  date?: string
+  body?: string
+  downloadAndInstall: () => Promise<void>
+  close: () => Promise<void>
+}
+
 function readFileAsDataUrl(file: File, language: AppLanguage): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -166,6 +191,17 @@ function readFileAsDataUrl(file: File, language: AppLanguage): Promise<string> {
   })
 }
 
+async function safelyCloseUpdateHandle(handle: UpdaterHandle | null): Promise<void> {
+  if (!handle) {
+    return
+  }
+  try {
+    await handle.close()
+  } catch {
+    // Ignore close errors. They are non-fatal and should not block update checks.
+  }
+}
+
 export function AppProvider({ children }: { children: ReactNode }): JSX.Element {
   const [loading, setLoading] = useState(true)
   const [settings, setSettingsState] = useState<Settings>(() => loadSettings())
@@ -175,6 +211,14 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
   const [incomeEntries, setIncomeEntries] = useState<IncomeEntry[]>([])
   const [scenarios, setScenarios] = useState<InterestScenario[]>([])
   const [toasts, setToasts] = useState<ToastMessage[]>([])
+  const [pendingUpdate, setPendingUpdate] = useState<UpdaterHandle | null>(null)
+  const [updatePrompt, setUpdatePrompt] = useState<UpdatePrompt | null>(null)
+  const [isCheckingForUpdates, setIsCheckingForUpdates] = useState(false)
+  const [isInstallingUpdate, setIsInstallingUpdate] = useState(false)
+  const [updateCheckError, setUpdateCheckError] = useState<string | null>(null)
+  const [skippedUpdateVersion, setSkippedUpdateVersion] = useState<string>(() => loadSkippedUpdateVersion())
+
+  const updatesSupported = isTauriRuntime()
 
   const dismissToast = useCallback((id: string) => {
     setToasts((current) => current.filter((item) => item.id !== id))
@@ -233,6 +277,10 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
   useEffect(() => {
     saveUiState(uiState)
   }, [uiState])
+
+  useEffect(() => {
+    saveSkippedUpdateVersion(skippedUpdateVersion)
+  }, [skippedUpdateVersion])
 
   const setSettings = useCallback((changes: Partial<Settings>) => {
     setSettingsState((current) => ({ ...current, ...changes }))
@@ -486,6 +534,152 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
     [incomeEntries, pushToast, scenarios, settings.language, subscriptions],
   )
 
+  const dismissUpdatePrompt = useCallback(() => {
+    setUpdatePrompt(null)
+    setPendingUpdate((current) => {
+      void safelyCloseUpdateHandle(current)
+      return null
+    })
+  }, [])
+
+  const skipUpdateVersion = useCallback(() => {
+    if (!updatePrompt) {
+      return
+    }
+    setSkippedUpdateVersion(updatePrompt.version)
+    dismissUpdatePrompt()
+    pushToast({
+      tone: 'info',
+      text: tx(
+        settings.language,
+        `Version ${updatePrompt.version} wird bis zur nächsten Version übersprungen.`,
+        `Version ${updatePrompt.version} will be skipped until the next version.`,
+      ),
+    })
+  }, [dismissUpdatePrompt, pushToast, settings.language, updatePrompt])
+
+  const checkForUpdates = useCallback(
+    async (options?: { manual?: boolean }): Promise<boolean> => {
+      const manual = Boolean(options?.manual)
+      if (!updatesSupported) {
+        if (manual) {
+          pushToast({
+            tone: 'info',
+            text: tx(
+              settings.language,
+              'Updates werden nur in der Desktop-App unterstützt.',
+              'Updates are only supported in the desktop app.',
+            ),
+          })
+        }
+        return false
+      }
+
+      setIsCheckingForUpdates(true)
+      setUpdateCheckError(null)
+
+      try {
+        const { check } = await import('@tauri-apps/plugin-updater')
+        const update = await check()
+
+        if (!update) {
+          dismissUpdatePrompt()
+          if (manual) {
+            pushToast({
+              tone: 'success',
+              text: tx(settings.language, 'Kein Update verfügbar. Du bist aktuell.', 'No update available. You are up to date.'),
+            })
+          }
+          return false
+        }
+
+        if (!manual && skippedUpdateVersion && skippedUpdateVersion === update.version) {
+          await update.close()
+          return false
+        }
+
+        setPendingUpdate((current) => {
+          void safelyCloseUpdateHandle(current)
+          return {
+            currentVersion: update.currentVersion,
+            version: update.version,
+            date: update.date,
+            body: update.body,
+            downloadAndInstall: () => update.downloadAndInstall(),
+            close: () => update.close(),
+          }
+        })
+        setUpdatePrompt({
+          currentVersion: update.currentVersion,
+          version: update.version,
+          date: update.date,
+          body: update.body,
+        })
+        setSkippedUpdateVersion((current) => (current === update.version ? '' : current))
+        return true
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : tx(settings.language, 'Update-Prüfung ist fehlgeschlagen.', 'Update check failed.')
+        setUpdateCheckError(message)
+        if (manual) {
+          pushToast({ tone: 'error', text: message, expiresInMs: 0 })
+        }
+        return false
+      } finally {
+        setIsCheckingForUpdates(false)
+      }
+    },
+    [dismissUpdatePrompt, pushToast, settings.language, skippedUpdateVersion, updatesSupported],
+  )
+
+  const installUpdate = useCallback(async () => {
+    if (!pendingUpdate) {
+      throw new Error(tx(settings.language, 'Kein Update zum Installieren verfügbar.', 'No update available to install.'))
+    }
+
+    setIsInstallingUpdate(true)
+    setUpdateCheckError(null)
+    try {
+      await pendingUpdate.downloadAndInstall()
+      pushToast({
+        tone: 'success',
+        text: tx(settings.language, 'Update wird installiert. App startet ggf. neu.', 'Update is being installed. The app may restart.'),
+      })
+      await safelyCloseUpdateHandle(pendingUpdate)
+      setSkippedUpdateVersion('')
+      setUpdatePrompt(null)
+      setPendingUpdate(null)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : tx(settings.language, 'Update-Installation fehlgeschlagen.', 'Update installation failed.')
+      setUpdateCheckError(message)
+      pushToast({ tone: 'error', text: message, expiresInMs: 0 })
+      throw error
+    } finally {
+      setIsInstallingUpdate(false)
+    }
+  }, [pendingUpdate, pushToast, settings.language])
+
+  const clearAllData = useCallback(async () => {
+    await Promise.all([replaceSubscriptions([]), replaceIncomeEntries([]), replaceInterestScenarios([])])
+    clearPersistedPreferences()
+    setPendingUpdate((current) => {
+      void safelyCloseUpdateHandle(current)
+      return null
+    })
+    setUpdatePrompt(null)
+    setSkippedUpdateVersion('')
+    setUpdateCheckError(null)
+    setSubscriptions([])
+    setIncomeEntries([])
+    setScenarios([])
+    setSettingsState(defaultSettings)
+    setUiStateState(defaultUiState)
+    setBackgroundImageDataUrlState(null)
+    pushToast({ tone: 'warning', text: tx(settings.language, 'Alle lokalen Daten wurden gelöscht.', 'All local data has been deleted.') })
+  }, [pushToast, settings.language])
+
   const contextValue = useMemo<AppContextValue>(
     () => ({
       loading,
@@ -496,6 +690,12 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       backgroundImageDataUrl,
       uiState,
       toasts,
+      updatesSupported,
+      isCheckingForUpdates,
+      isInstallingUpdate,
+      skippedUpdateVersion,
+      updatePrompt,
+      updateCheckError,
       setSettings,
       setUiState,
       setBackgroundImageFromFile,
@@ -511,19 +711,29 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       deleteScenario,
       exportBackup,
       importBackup,
+      clearAllData,
+      checkForUpdates,
+      installUpdate,
+      skipUpdateVersion,
+      dismissUpdatePrompt,
       dismissToast,
     }),
     [
       addIncomeEntry,
       addScenario,
       addSubscription,
+      checkForUpdates,
+      dismissUpdatePrompt,
       deleteIncomeEntry,
       deleteScenario,
       deleteSubscription,
       dismissToast,
+      clearAllData,
       exportBackup,
       importBackup,
       incomeEntries,
+      isCheckingForUpdates,
+      isInstallingUpdate,
       loading,
       scenarios,
       setSettings,
@@ -532,11 +742,17 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       clearBackgroundImage,
       settings,
       backgroundImageDataUrl,
+      skippedUpdateVersion,
+      skipUpdateVersion,
       subscriptions,
       toasts,
       uiState,
+      updateCheckError,
+      updatePrompt,
       updateIncomeEntry,
+      updatesSupported,
       updateScenario,
+      installUpdate,
       updateSubscription,
     ],
   )

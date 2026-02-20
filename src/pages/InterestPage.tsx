@@ -196,20 +196,20 @@ export function InterestPage(): JSX.Element {
           <div className="stats-grid compact">
             <div className="stat-tile">
               <p className="muted">{t('Endsaldo', 'Final balance')}</p>
-              <strong>{formatMoney(result.endBalance, settings.currency, settings.decimals, settings.privacyHideAmounts)}</strong>
+              <strong>{formatMoney(result.endBalance, settings.currency, settings.privacyHideAmounts)}</strong>
             </div>
             <div className="stat-tile">
               <p className="muted">{t('Gesamte Einzahlungen', 'Total contributions')}</p>
-              <strong>{formatMoney(result.totalContribution, settings.currency, settings.decimals, settings.privacyHideAmounts)}</strong>
+              <strong>{formatMoney(result.totalContribution, settings.currency, settings.privacyHideAmounts)}</strong>
             </div>
             <div className="stat-tile">
               <p className="muted">{t('Gesamte Zinsen', 'Total interest')}</p>
-              <strong>{formatMoney(result.totalInterest, settings.currency, settings.decimals, settings.privacyHideAmounts)}</strong>
+              <strong>{formatMoney(result.totalInterest, settings.currency, settings.privacyHideAmounts)}</strong>
             </div>
             {input.advancedEnabled ? (
               <div className="stat-tile">
                 <p className="muted">{t('Realer Endsaldo', 'Real final balance')}</p>
-                <strong>{formatMoney(result.realEndBalance ?? 0, settings.currency, settings.decimals, settings.privacyHideAmounts)}</strong>
+                <strong>{formatMoney(result.realEndBalance ?? 0, settings.currency, settings.privacyHideAmounts)}</strong>
               </div>
             ) : null}
           </div>
@@ -217,7 +217,7 @@ export function InterestPage(): JSX.Element {
           <div className="chips">
             {contributionVsInterest.map((item) => (
               <span key={item.label} className="chip">
-                {item.label}: {formatMoney(item.value, settings.currency, settings.decimals, settings.privacyHideAmounts)}
+                {item.label}: {formatMoney(item.value, settings.currency, settings.privacyHideAmounts)}
               </span>
             ))}
           </div>
@@ -243,9 +243,9 @@ export function InterestPage(): JSX.Element {
                 {result.timeline.map((item) => (
                   <tr key={item.month}>
                     <td>{item.month}</td>
-                    <td>{formatMoney(item.contribution, settings.currency, settings.decimals, settings.privacyHideAmounts)}</td>
-                    <td>{formatMoney(item.interestEarned, settings.currency, settings.decimals, settings.privacyHideAmounts)}</td>
-                    <td>{formatMoney(item.balance, settings.currency, settings.decimals, settings.privacyHideAmounts)}</td>
+                    <td>{formatMoney(item.contribution, settings.currency, settings.privacyHideAmounts)}</td>
+                    <td>{formatMoney(item.interestEarned, settings.currency, settings.privacyHideAmounts)}</td>
+                    <td>{formatMoney(item.balance, settings.currency, settings.privacyHideAmounts)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -271,7 +271,7 @@ export function InterestPage(): JSX.Element {
                   </small>
                 </div>
                 <div className="row-actions">
-                  <span>{formatMoney(computed.endBalance, settings.currency, settings.decimals, settings.privacyHideAmounts)}</span>
+                  <span>{formatMoney(computed.endBalance, settings.currency, settings.privacyHideAmounts)}</span>
                   <button type="button" className="button button-danger" onClick={() => setConfirmDeleteScenario({ id: scenario.id, name: scenario.input.name })}>
                     {t('Löschen', 'Delete')}
                   </button>
@@ -330,11 +330,11 @@ export function InterestPage(): JSX.Element {
           <div className="compare-grid">
             <article className="card compact">
               <h3>{compared.a.scenario.input.name}</h3>
-              <p>{formatMoney(compared.a.result.endBalance, settings.currency, settings.decimals, settings.privacyHideAmounts)}</p>
+              <p>{formatMoney(compared.a.result.endBalance, settings.currency, settings.privacyHideAmounts)}</p>
             </article>
             <article className="card compact">
               <h3>{compared.b.scenario.input.name}</h3>
-              <p>{formatMoney(compared.b.result.endBalance, settings.currency, settings.decimals, settings.privacyHideAmounts)}</p>
+              <p>{formatMoney(compared.b.result.endBalance, settings.currency, settings.privacyHideAmounts)}</p>
             </article>
           </div>
         ) : (

@@ -1,12 +1,14 @@
-﻿export function formatMoney(value: number, currency: string, decimals: number, masked: boolean): string {
+﻿const DEFAULT_MONEY_DECIMALS = 2
+
+export function formatMoney(value: number, currency: string, masked: boolean): string {
   if (masked) {
     return '****'
   }
   return new Intl.NumberFormat(undefined, {
     style: 'currency',
     currency,
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
+    minimumFractionDigits: DEFAULT_MONEY_DECIMALS,
+    maximumFractionDigits: DEFAULT_MONEY_DECIMALS,
   }).format(value)
 }
 

@@ -11,6 +11,10 @@ import { StatsPage } from './pages/StatsPage'
 import { SubscriptionsPage } from './pages/SubscriptionsPage'
 import { useAppContext } from './state/useAppContext'
 import { tx } from './utils/i18n'
+import { isGitHubPagesRuntime } from './utils/runtime'
+
+let startupUpdateCheckTriggered = false
+const DESKTOP_RELEASES_URL = 'https://github.com/xanoahax/Financify.io/releases'
 
 function resolveTheme(theme: 'light' | 'dark' | 'glass' | 'system'): 'light' | 'dark' | 'glass' {
   if (theme !== 'system') {
@@ -20,8 +24,25 @@ function resolveTheme(theme: 'light' | 'dark' | 'glass' | 'system'): 'light' | '
 }
 
 export default function App(): JSX.Element {
-  const { loading, settings, backgroundImageDataUrl, uiState, setUiState, toasts, dismissToast } = useAppContext()
+  const {
+    loading,
+    settings,
+    backgroundImageDataUrl,
+    uiState,
+    setUiState,
+    toasts,
+    dismissToast,
+    updatesSupported,
+    checkForUpdates,
+    updatePrompt,
+    installUpdate,
+    skipUpdateVersion,
+    dismissUpdatePrompt,
+    isInstallingUpdate,
+    updateCheckError,
+  } = useAppContext()
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [showDesktopDownloadHint, setShowDesktopDownloadHint] = useState(() => isGitHubPagesRuntime())
   const navigate = useNavigate()
   const language = settings.language
   const t = (de: string, en: string) => tx(language, de, en)
@@ -65,6 +86,14 @@ export default function App(): JSX.Element {
     window.addEventListener('keydown', onShortcut)
     return () => window.removeEventListener('keydown', onShortcut)
   }, [])
+
+  useEffect(() => {
+    if (!updatesSupported || loading || startupUpdateCheckTriggered) {
+      return
+    }
+    startupUpdateCheckTriggered = true
+    void checkForUpdates()
+  }, [checkForUpdates, loading, updatesSupported])
 
   const paletteActions: PaletteAction[] = [
     {
@@ -175,6 +204,74 @@ export default function App(): JSX.Element {
         </div>
 
         {paletteOpen ? <CommandPalette onClose={() => setPaletteOpen(false)} actions={paletteActions} language={language} /> : null}
+        {showDesktopDownloadHint ? (
+          <div className="form-modal-backdrop" onClick={() => setShowDesktopDownloadHint(false)} role="presentation">
+            <article className="card form-modal confirm-modal update-modal" onClick={(event) => event.stopPropagation()}>
+              <header className="section-header">
+                <h2>{t('Desktop-App verfügbar', 'Desktop app available')}</h2>
+                <button
+                  type="button"
+                  className="icon-button"
+                  onClick={() => setShowDesktopDownloadHint(false)}
+                  aria-label={t('Popup schließen', 'Close popup')}
+                >
+                  ×
+                </button>
+              </header>
+              <p>
+                {t(
+                  'Du nutzt financify gerade über GitHub Pages. Für lokale Langzeitspeicherung und integrierte Updates empfehlen wir die Desktop-App.',
+                  'You are currently using financify on GitHub Pages. For long-term local storage and built-in updates, we recommend the desktop app.',
+                )}
+              </p>
+              <div className="form-actions update-modal-actions">
+                <a href={DESKTOP_RELEASES_URL} target="_blank" rel="noreferrer" className="button button-primary">
+                  {t('Download', 'Download')}
+                </a>
+                <button type="button" className="button button-secondary" onClick={() => setShowDesktopDownloadHint(false)}>
+                  {t('Im Browser fortfahren', 'Continue in browser')}
+                </button>
+              </div>
+            </article>
+          </div>
+        ) : null}
+        {updatePrompt ? (
+          <div className="form-modal-backdrop" onClick={dismissUpdatePrompt} role="presentation">
+            <article className="card form-modal confirm-modal update-modal" onClick={(event) => event.stopPropagation()}>
+              <header className="section-header">
+                <h2>{t('Update verfügbar', 'Update available')}</h2>
+                <button
+                  type="button"
+                  className="icon-button"
+                  onClick={dismissUpdatePrompt}
+                  aria-label={t('Popup schließen', 'Close popup')}
+                  disabled={isInstallingUpdate}
+                >
+                  ×
+                </button>
+              </header>
+              <p>
+                {t(
+                  `Version ${updatePrompt.version} ist verfügbar (aktuell ${updatePrompt.currentVersion}).`,
+                  `Version ${updatePrompt.version} is available (current ${updatePrompt.currentVersion}).`,
+                )}
+              </p>
+              {updatePrompt.body ? <pre className="update-modal-notes">{updatePrompt.body}</pre> : null}
+              {updateCheckError ? <p className="error-text">{updateCheckError}</p> : null}
+              <div className="form-actions update-modal-actions">
+                <button type="button" className="button button-primary" onClick={() => void installUpdate()} disabled={isInstallingUpdate}>
+                  {isInstallingUpdate ? t('Installiert...', 'Installing...') : t('Installieren', 'Install')}
+                </button>
+                <button type="button" className="button button-secondary" onClick={skipUpdateVersion} disabled={isInstallingUpdate}>
+                  {t('Diese Version überspringen', 'Skip this version')}
+                </button>
+                <button type="button" className="button button-tertiary" onClick={dismissUpdatePrompt} disabled={isInstallingUpdate}>
+                  {t('Jetzt ignorieren', 'Ignore for now')}
+                </button>
+              </div>
+            </article>
+          </div>
+        ) : null}
         <QuickAddFab
           onAddSubscription={() => navigate('/subscriptions?quickAdd=1')}
           onAddIncome={() => navigate('/income?quickAdd=1')}

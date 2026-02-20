@@ -2,7 +2,7 @@ import { useState } from 'react'
 import packageJson from '../../package.json'
 import { useAppContext } from '../state/useAppContext'
 import type { AppBackup, ShiftJobConfig } from '../types/models'
-import { incomesToCsv, subscriptionsToCsv, triggerDownload } from '../utils/csv'
+import { saveTextFileWithDialog } from '../utils/csv'
 import { tx } from '../utils/i18n'
 
 const accentPresets = ['#0a84ff', '#2ec4b6', '#ff9f0a', '#bf5af2', '#ff375f', '#6e6e73']
@@ -20,23 +20,28 @@ export function SettingsPage(): JSX.Element {
     clearBackgroundImage,
     exportBackup,
     importBackup,
-    subscriptions,
-    incomeEntries,
+    clearAllData,
+    updatesSupported,
+    isCheckingForUpdates,
+    isInstallingUpdate,
+    checkForUpdates,
+    skippedUpdateVersion,
+    updateCheckError,
   } = useAppContext()
   const [importMode, setImportMode] = useState<'replace' | 'merge'>('replace')
   const [importError, setImportError] = useState('')
   const [backgroundError, setBackgroundError] = useState('')
+  const [confirmClearAllData, setConfirmClearAllData] = useState(false)
   const t = (de: string, en: string) => tx(settings.language, de, en)
   const hasBackgroundImage = Boolean(backgroundImageDataUrl)
 
-  function exportJson(): void {
+  async function exportJson(): Promise<void> {
     const payload = exportBackup()
-    triggerDownload(`financify-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(payload, null, 2), 'application/json')
+    await saveTextFileWithDialog(`financify-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(payload, null, 2), 'application/json')
   }
 
-  function exportCsv(): void {
-    triggerDownload('subscriptions.csv', subscriptionsToCsv(subscriptions), 'text/csv')
-    triggerDownload('income.csv', incomesToCsv(incomeEntries), 'text/csv')
+  async function checkUpdatesNow(): Promise<void> {
+    await checkForUpdates({ manual: true })
   }
 
   function updateShiftJobs(nextJobs: ShiftJobConfig[], nextDefaultId?: string): void {
@@ -98,6 +103,17 @@ export function SettingsPage(): JSX.Element {
     }
   }
 
+  async function handleClearAllDataConfirmed(): Promise<void> {
+    try {
+      setImportError('')
+      await clearAllData()
+      setConfirmClearAllData(false)
+    } catch (error) {
+      setConfirmClearAllData(false)
+      setImportError(error instanceof Error ? error.message : t('Alle Daten konnten nicht gelöscht werden.', 'Could not delete all data.'))
+    }
+  }
+
   return (
     <section className="page">
       <header className="page-header">
@@ -105,7 +121,19 @@ export function SettingsPage(): JSX.Element {
           <h1>{t('Einstellungen', 'Settings')}</h1>
           <p className="muted">{t('Oberfläche, Präferenzen und lokales Backup-Verhalten anpassen.', 'Adjust interface, preferences and local backup behavior.')}</p>
         </div>
-        <p className="muted app-version">Version {packageJson.version}</p>
+        <div className="app-version-row">
+          <p className="muted app-version">Version {packageJson.version}</p>
+          <button
+            type="button"
+            className={`icon-button update-check-icon ${isCheckingForUpdates ? 'is-checking' : ''}`}
+            onClick={() => void checkUpdatesNow()}
+            disabled={!updatesSupported || isCheckingForUpdates || isInstallingUpdate}
+            aria-label={t('Jetzt nach Updates suchen', 'Check for updates now')}
+            title={t('Jetzt nach Updates suchen', 'Check for updates now')}
+          >
+            {'\u21BB'}
+          </button>
+        </div>
       </header>
 
       <div className="two-column">
@@ -142,7 +170,16 @@ export function SettingsPage(): JSX.Element {
                       aria-label={t(`Akzentfarbe ${color} auswählen`, `Select accent color ${color}`)}
                     />
                   ))}
-                  <input type="color" value={settings.accentColor} onChange={(event) => setSettings({ accentColor: event.target.value })} />
+                  <label
+                    className="color-picker-circle"
+                    style={{ backgroundColor: settings.accentColor }}
+                    aria-label={t('Eigene Akzentfarbe wählen', 'Choose custom accent color')}
+                  >
+                    <span className="color-picker-plus" aria-hidden="true">
+                      +
+                    </span>
+                    <input type="color" value={settings.accentColor} onChange={(event) => setSettings({ accentColor: event.target.value })} />
+                  </label>
                 </div>
               </label>
               <label className="switch">
@@ -153,23 +190,33 @@ export function SettingsPage(): JSX.Element {
                 />
                 <span>{t('Gradient-Overlay', 'Gradient overlay')}</span>
               </label>
-              <label>
-                <span>{t('Gradient-Farben', 'Gradient colors')}</span>
-                <div className="color-row gradient-color-row">
-                  <input
-                    type="color"
-                    value={settings.gradientColorA}
-                    onChange={(event) => setSettings({ gradientColorA: event.target.value })}
-                    aria-label={t('Gradient-Farbe A', 'Gradient color A')}
-                  />
-                  <input
-                    type="color"
-                    value={settings.gradientColorB}
-                    onChange={(event) => setSettings({ gradientColorB: event.target.value })}
-                    aria-label={t('Gradient-Farbe B', 'Gradient color B')}
-                  />
-                </div>
-              </label>
+              {settings.gradientOverlayEnabled ? (
+                <label>
+                  <span>{t('Gradient-Farben', 'Gradient colors')}</span>
+                  <div className="color-row gradient-color-row">
+                    <label className="color-picker-circle" style={{ backgroundColor: settings.gradientColorA }} aria-label={t('Gradient-Farbe A', 'Gradient color A')}>
+                      <span className="color-picker-plus" aria-hidden="true">
+                        +
+                      </span>
+                      <input
+                        type="color"
+                        value={settings.gradientColorA}
+                        onChange={(event) => setSettings({ gradientColorA: event.target.value })}
+                      />
+                    </label>
+                    <label className="color-picker-circle" style={{ backgroundColor: settings.gradientColorB }} aria-label={t('Gradient-Farbe B', 'Gradient color B')}>
+                      <span className="color-picker-plus" aria-hidden="true">
+                        +
+                      </span>
+                      <input
+                        type="color"
+                        value={settings.gradientColorB}
+                        onChange={(event) => setSettings({ gradientColorB: event.target.value })}
+                      />
+                    </label>
+                  </div>
+                </label>
+              ) : null}
             </section>
 
             <section className="settings-group">
@@ -237,16 +284,6 @@ export function SettingsPage(): JSX.Element {
             <label>
               {t('Währung', 'Currency')}
               <input value={settings.currency} onChange={(event) => setSettings({ currency: event.target.value.toUpperCase() })} />
-            </label>
-            <label>
-              {t('Dezimalstellen', 'Decimal places')}
-              <input
-                type="number"
-                min={0}
-                max={4}
-                value={settings.decimals}
-                onChange={(event) => setSettings({ decimals: Number(event.target.value) })}
-              />
             </label>
             <label>
               {t('Datumsformat', 'Date format')}
@@ -327,13 +364,19 @@ export function SettingsPage(): JSX.Element {
         <header className="section-header">
           <h2>{t('Datenverwaltung', 'Data management')}</h2>
         </header>
+        <div className="setting-list">
+          {isCheckingForUpdates ? <p className="muted">{t('Suche nach Updates...','Checking for updates...')}</p> : null}
+          {skippedUpdateVersion ? (
+            <p className="muted">
+              {t(`Übersprungene Version: ${skippedUpdateVersion}`, `Skipped version: ${skippedUpdateVersion}`)}
+            </p>
+          ) : null}
+          {updateCheckError ? <p className="error-text">{updateCheckError}</p> : null}
+        </div>
         {importError ? <p className="error-text">{importError}</p> : null}
         <div className="inline-controls">
-          <button type="button" className="button button-secondary" onClick={exportJson}>
+          <button type="button" className="button button-secondary" onClick={() => void exportJson()}>
             {t('JSON-Backup exportieren', 'Export JSON backup')}
-          </button>
-          <button type="button" className="button button-secondary" onClick={exportCsv}>
-            {t('CSV exportieren', 'Export CSV')}
           </button>
           <select value={importMode} onChange={(event) => setImportMode(event.target.value as 'replace' | 'merge')}>
             <option value="replace">{t('Importmodus: Ersetzen', 'Import mode: Replace')}</option>
@@ -344,7 +387,48 @@ export function SettingsPage(): JSX.Element {
             <input type="file" accept="application/json" onChange={(event) => void onImport(event)} />
           </label>
         </div>
+        <div className="danger-zone">
+          <p className="danger-zone-title">{t('Danger Zone', 'Danger Zone')}</p>
+          <p className="muted">
+            {t(
+              'Löscht alle lokalen Daten dieser App: Abos, Einkommen, Zins-Szenarien, Einstellungen und Hintergrundbild.',
+              'Deletes all local data from this app: subscriptions, income, interest scenarios, settings and background image.',
+            )}
+          </p>
+          <button type="button" className="button button-danger" onClick={() => setConfirmClearAllData(true)}>
+            {t('Delete all data', 'Delete all data')}
+          </button>
+        </div>
       </article>
+
+      {confirmClearAllData ? (
+        <div className="form-modal-backdrop" onClick={() => setConfirmClearAllData(false)} role="presentation">
+          <article className="card form-modal confirm-modal" onClick={(event) => event.stopPropagation()}>
+            <header className="section-header">
+              <h2>{t('Alle Daten wirklich löschen?', 'Delete all data permanently?')}</h2>
+              <button type="button" className="icon-button" onClick={() => setConfirmClearAllData(false)} aria-label={t('Popup schließen', 'Close popup')}>
+                ×
+              </button>
+            </header>
+            <p>
+              {t(
+                'Diese Aktion kann nicht rückgängig gemacht werden. Bitte vorher ein JSON-Backup exportieren.',
+                'This action cannot be undone. Please export a JSON backup first.',
+              )}
+            </p>
+            <div className="form-actions">
+              <button type="button" className="button button-danger" onClick={() => void handleClearAllDataConfirmed()}>
+                {t('Endgültig löschen', 'Delete permanently')}
+              </button>
+              <button type="button" className="button button-secondary" onClick={() => setConfirmClearAllData(false)}>
+                {t('Abbrechen', 'Cancel')}
+              </button>
+            </div>
+          </article>
+        </div>
+      ) : null}
     </section>
   )
 }
+
+

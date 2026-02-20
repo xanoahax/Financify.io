@@ -94,17 +94,17 @@ export function StatsPage(): JSX.Element {
       <div className="stats-grid">
         <StatCard
           label={t('Einkommen (gewählter Zeitraum)', 'Income (selected range)')}
-          value={formatMoney(data.incomeTotal, settings.currency, settings.decimals, settings.privacyHideAmounts)}
+          value={formatMoney(data.incomeTotal, settings.currency, settings.privacyHideAmounts)}
           hint={`${t('ggü. Vorzeitraum', 'vs previous range')} ${toPercent(data.incomeDelta)}`}
         />
         <StatCard
           label={t('Geschätzte Abo-Ausgaben', 'Estimated subscription expenses')}
-          value={formatMoney(data.estimatedSpend, settings.currency, settings.decimals, settings.privacyHideAmounts)}
-          hint={`${formatMoney(data.monthlySpend, settings.currency, settings.decimals, settings.privacyHideAmounts)} ${t('pro Monat', 'per month')}`}
+          value={formatMoney(data.estimatedSpend, settings.currency, settings.privacyHideAmounts)}
+          hint={`${formatMoney(data.monthlySpend, settings.currency, settings.privacyHideAmounts)} ${t('pro Monat', 'per month')}`}
         />
         <StatCard
           label={t('Cashflow', 'Cashflow')}
-          value={formatMoney(data.cashflow, settings.currency, settings.decimals, settings.privacyHideAmounts)}
+          value={formatMoney(data.cashflow, settings.currency, settings.privacyHideAmounts)}
           hint={`${t('Vorzeitraum', 'Previous range')}: ${formatDateByPattern(data.previousRange.start, settings.dateFormat)} - ${formatDateByPattern(data.previousRange.end, settings.dateFormat)}`}
         />
       </div>

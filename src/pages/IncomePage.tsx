@@ -356,16 +356,16 @@ export function IncomePage(): JSX.Element {
       <div className="stats-grid">
         <article className="card stat-card">
           <p className="muted">{t('Einkommen gesamt', 'Total income')} ({viewMode === 'month' ? t('Monat', 'month') : t('Jahr', 'year')})</p>
-          <p className="stat-value">{formatMoney(stats.total, settings.currency, settings.decimals, settings.privacyHideAmounts)}</p>
+          <p className="stat-value">{formatMoney(stats.total, settings.currency, settings.privacyHideAmounts)}</p>
           <p className="hint">{t('Enthält wiederkehrende Einträge im gewählten Zeitraum.', 'Includes recurring entries in the selected period.')}</p>
         </article>
         <article className="card stat-card">
           <p className="muted">{t('Monatlicher Durchschnitt', 'Monthly average')}</p>
-          <p className="stat-value">{formatMoney(stats.aggregates.average, settings.currency, settings.decimals, settings.privacyHideAmounts)}</p>
+          <p className="stat-value">{formatMoney(stats.aggregates.average, settings.currency, settings.privacyHideAmounts)}</p>
         </article>
         <article className="card stat-card">
           <p className="muted">{t('Monatlicher Median', 'Monthly median')}</p>
-          <p className="stat-value">{formatMoney(stats.aggregates.median, settings.currency, settings.decimals, settings.privacyHideAmounts)}</p>
+          <p className="stat-value">{formatMoney(stats.aggregates.median, settings.currency, settings.privacyHideAmounts)}</p>
           <p className="hint">{t('Vgl. Vormonat', 'vs previous month')}: {toPercent(stats.mom)}</p>
         </article>
       </div>
@@ -469,7 +469,7 @@ export function IncomePage(): JSX.Element {
                     <small className="muted">{t('Stundensatz', 'Hourly rate')}: {shiftHourlyRate} €/h</small>
                     <strong>
                       {t('Berechnetes Einkommen', 'Calculated income')}:{' '}
-                      {shiftPreview ? formatMoney(shiftPreview.amount, settings.currency, settings.decimals, settings.privacyHideAmounts) : '—'}
+                      {shiftPreview ? formatMoney(shiftPreview.amount, settings.currency, settings.privacyHideAmounts) : '—'}
                     </strong>
                     <small className="muted">
                       {shiftPreview
@@ -591,7 +591,7 @@ export function IncomePage(): JSX.Element {
                 <tr key={item.id}>
                   <td>{formatDateByPattern(item.date, settings.dateFormat)}</td>
                   <td>{item.source}</td>
-                  <td>{formatMoney(item.amount, settings.currency, settings.decimals, settings.privacyHideAmounts)}</td>
+                  <td>{formatMoney(item.amount, settings.currency, settings.privacyHideAmounts)}</td>
                   <td>{item.tags.join(', ') || '-'}</td>
                   <td>
                     <div className="row-actions">
