@@ -6,7 +6,7 @@ const packageJson = JSON.parse(readFileSync(new URL('./package.json', import.met
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: '/financify.io/',
+  base: './',
   plugins: [react()],
   define: {
     __APP_VERSION__: JSON.stringify(packageJson.version),
