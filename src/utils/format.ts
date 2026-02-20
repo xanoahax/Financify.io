@@ -1,15 +1,35 @@
-﻿const DEFAULT_MONEY_DECIMALS = 2
+const DEFAULT_MONEY_DECIMALS = 2
+const SUPPORTED_CURRENCIES = ['EUR', 'USD'] as const
+
+type SupportedCurrency = (typeof SUPPORTED_CURRENCIES)[number]
+
+function normalizeCurrency(input: string): SupportedCurrency {
+  const upper = input.toUpperCase()
+  return SUPPORTED_CURRENCIES.includes(upper as SupportedCurrency) ? (upper as SupportedCurrency) : 'EUR'
+}
 
 export function formatMoney(value: number, currency: string, masked: boolean): string {
   if (masked) {
     return '****'
   }
+  const safeCurrency = normalizeCurrency(currency)
   return new Intl.NumberFormat(undefined, {
     style: 'currency',
-    currency,
+    currency: safeCurrency,
     minimumFractionDigits: DEFAULT_MONEY_DECIMALS,
     maximumFractionDigits: DEFAULT_MONEY_DECIMALS,
   }).format(value)
+}
+
+export function getCurrencySymbol(currency: string): string {
+  const safeCurrency = normalizeCurrency(currency)
+  const parts = new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency: safeCurrency,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).formatToParts(0)
+  return parts.find((part) => part.type === 'currency')?.value ?? safeCurrency
 }
 
 export function formatNumber(value: number, decimals = 2): string {
@@ -34,4 +54,3 @@ export function median(values: number[]): number {
   }
   return sorted[middle]
 }
-

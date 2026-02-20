@@ -3,6 +3,7 @@ import packageJson from '../../package.json'
 import { useAppContext } from '../state/useAppContext'
 import type { AppBackup, ShiftJobConfig } from '../types/models'
 import { saveTextFileWithDialog } from '../utils/csv'
+import { getCurrencySymbol } from '../utils/format'
 import { tx } from '../utils/i18n'
 
 const accentPresets = ['#0a84ff', '#2ec4b6', '#ff9f0a', '#bf5af2', '#ff375f', '#6e6e73']
@@ -34,6 +35,7 @@ export function SettingsPage(): JSX.Element {
   const [confirmClearAllData, setConfirmClearAllData] = useState(false)
   const t = (de: string, en: string) => tx(settings.language, de, en)
   const hasBackgroundImage = Boolean(backgroundImageDataUrl)
+  const currencySymbol = getCurrencySymbol(settings.currency)
 
   async function exportJson(): Promise<void> {
     const payload = exportBackup()
@@ -122,7 +124,7 @@ export function SettingsPage(): JSX.Element {
           <p className="muted">{t('Oberfläche, Präferenzen und lokales Backup-Verhalten anpassen.', 'Adjust interface, preferences and local backup behavior.')}</p>
         </div>
         <div className="app-version-row">
-          <p className="muted app-version">Version {packageJson.version}</p>
+          <p className="muted app-version">{t('Version', 'Version')} {packageJson.version}</p>
           <button
             type="button"
             className={`icon-button update-check-icon ${isCheckingForUpdates ? 'is-checking' : ''}`}
@@ -283,7 +285,10 @@ export function SettingsPage(): JSX.Element {
             </label>
             <label>
               {t('Währung', 'Currency')}
-              <input value={settings.currency} onChange={(event) => setSettings({ currency: event.target.value.toUpperCase() })} />
+              <select value={settings.currency} onChange={(event) => setSettings({ currency: event.target.value as 'EUR' | 'USD' })}>
+                <option value="EUR">EUR (€)</option>
+                <option value="USD">USD ($)</option>
+              </select>
             </label>
             <label>
               {t('Datumsformat', 'Date format')}
@@ -336,7 +341,7 @@ export function SettingsPage(): JSX.Element {
                 <input value={job.name} onChange={(event) => updateJobName(job.id, event.target.value)} placeholder={t('z. B. FoodAffairs', 'e.g. FoodAffairs')} />
               </label>
               <label>
-                {t('Stundensatz (€/h)', 'Hourly rate (€/h)')}
+                {`${t('Stundensatz', 'Hourly rate')} (${currencySymbol}/h)`}
                 <input type="number" min={0.01} step="0.01" value={job.hourlyRate} onChange={(event) => updateJobRate(job.id, event.target.value)} />
               </label>
               <div className="inline-controls">
@@ -388,7 +393,7 @@ export function SettingsPage(): JSX.Element {
           </label>
         </div>
         <div className="danger-zone">
-          <p className="danger-zone-title">{t('Danger Zone', 'Danger Zone')}</p>
+          <p className="danger-zone-title">{t('Gefahrenbereich', 'Danger Zone')}</p>
           <p className="muted">
             {t(
               'Löscht alle lokalen Daten dieser App: Abos, Einkommen, Zins-Szenarien, Einstellungen und Hintergrundbild.',
@@ -396,7 +401,7 @@ export function SettingsPage(): JSX.Element {
             )}
           </p>
           <button type="button" className="button button-danger" onClick={() => setConfirmClearAllData(true)}>
-            {t('Delete all data', 'Delete all data')}
+            {t('Alle Daten löschen', 'Delete all data')}
           </button>
         </div>
       </article>
@@ -430,5 +435,3 @@ export function SettingsPage(): JSX.Element {
     </section>
   )
 }
-
-

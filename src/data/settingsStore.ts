@@ -5,6 +5,8 @@ const UI_STATE_KEY = 'financify.ui-state'
 const BACKGROUND_IMAGE_KEY = 'financify.background-image'
 const SKIPPED_UPDATE_VERSION_KEY = 'financify.updater.skipped-version'
 const LEGACY_MIGRATION_SHIFT_JOB_ID = 'job-legacy-foodaffairs'
+const SUPPORTED_CURRENCIES = ['EUR', 'USD'] as const
+type SupportedCurrency = (typeof SUPPORTED_CURRENCIES)[number]
 
 export const defaultSettings: Settings = {
   language: 'de',
@@ -69,6 +71,14 @@ function normalizeShiftJobs(raw: unknown, legacyRate: unknown): ShiftJobConfig[]
   return []
 }
 
+function normalizeCurrency(raw: unknown): SupportedCurrency {
+  if (typeof raw !== 'string') {
+    return defaultSettings.currency
+  }
+  const upper = raw.toUpperCase()
+  return SUPPORTED_CURRENCIES.includes(upper as SupportedCurrency) ? (upper as SupportedCurrency) : defaultSettings.currency
+}
+
 export function loadSettings(): Settings {
   const parsed = parseJson<Record<string, unknown>>(window.localStorage.getItem(SETTINGS_KEY), defaultSettings as unknown as Record<string, unknown>)
   const shiftJobs = normalizeShiftJobs(parsed.shiftJobs, parsed.foodAffairsHourlyRate)
@@ -80,6 +90,7 @@ export function loadSettings(): Settings {
   return {
     ...defaultSettings,
     ...parsed,
+    currency: normalizeCurrency(parsed.currency),
     shiftJobs,
     defaultShiftJobId,
   }

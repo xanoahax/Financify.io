@@ -80,7 +80,7 @@ export interface Settings {
   backgroundImageBlurEnabled: boolean
   backgroundImageBlurAmount: number
   reducedMotion: boolean
-  currency: string
+  currency: 'EUR' | 'USD'
   shiftJobs: ShiftJobConfig[]
   defaultShiftJobId: string
   dateFormat: 'DD.MM.YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-DD'

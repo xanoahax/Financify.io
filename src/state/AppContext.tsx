@@ -85,6 +85,9 @@ export interface AppContextValue {
 // eslint-disable-next-line react-refresh/only-export-components
 export const AppContext = createContext<AppContextValue | null>(null)
 
+const SUPPORTED_CURRENCIES = ['EUR', 'USD'] as const
+type SupportedCurrency = (typeof SUPPORTED_CURRENCIES)[number]
+
 function nowIso(): string {
   return new Date().toISOString()
 }
@@ -135,6 +138,14 @@ function normalizeImportedShiftJobs(raw: unknown): ShiftJobConfig[] {
     .filter((job): job is ShiftJobConfig => job !== null)
 }
 
+function normalizeCurrency(value: unknown): SupportedCurrency {
+  if (typeof value !== 'string') {
+    return defaultSettings.currency
+  }
+  const upper = value.toUpperCase()
+  return SUPPORTED_CURRENCIES.includes(upper as SupportedCurrency) ? (upper as SupportedCurrency) : defaultSettings.currency
+}
+
 function normalizeImportedSettings(raw: unknown): Settings {
   if (!raw || typeof raw !== 'object') {
     return defaultSettings
@@ -149,6 +160,7 @@ function normalizeImportedSettings(raw: unknown): Settings {
   return {
     ...defaultSettings,
     ...candidate,
+    currency: normalizeCurrency(candidate.currency),
     shiftJobs,
     defaultShiftJobId,
   }
@@ -283,7 +295,11 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
   }, [skippedUpdateVersion])
 
   const setSettings = useCallback((changes: Partial<Settings>) => {
-    setSettingsState((current) => ({ ...current, ...changes }))
+    setSettingsState((current) => ({
+      ...current,
+      ...changes,
+      ...(changes.currency !== undefined ? { currency: normalizeCurrency(changes.currency) } : {}),
+    }))
   }, [])
 
   const setUiState = useCallback((changes: Partial<UiState>) => {

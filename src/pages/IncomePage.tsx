@@ -6,7 +6,7 @@ import { LineChart } from '../components/LineChart'
 import { useAppContext } from '../state/useAppContext'
 import type { IncomeEntry } from '../types/models'
 import { addDays, endOfMonth, endOfYear, formatDateByPattern, monthLabel, monthKey, startOfMonth, startOfYear, todayString } from '../utils/date'
-import { formatMoney, toPercent } from '../utils/format'
+import { formatMoney, getCurrencySymbol, toPercent } from '../utils/format'
 import { incomeByMonth, materializeIncomeEntriesForRange, monthOverMonthChange, monthStats, sourceBreakdown, sumIncome } from '../utils/income'
 import { tx } from '../utils/i18n'
 import { calculateShiftIncome } from '../utils/shiftIncome'
@@ -88,6 +88,7 @@ export function IncomePage(): JSX.Element {
   const shiftDateInputRef = useRef<HTMLInputElement | null>(null)
   const t = (de: string, en: string) => tx(settings.language, de, en)
   const monthLocale = settings.language === 'de' ? 'de-DE' : 'en-US'
+  const currencySymbol = getCurrencySymbol(settings.currency)
   const selectedShiftJob = useMemo(
     () => shiftJobs.find((job) => job.id === shiftForm.jobId) ?? shiftJobs.find((job) => job.id === resolvedDefaultShiftJobId) ?? null,
     [resolvedDefaultShiftJobId, shiftForm.jobId, shiftJobs],
@@ -466,7 +467,7 @@ export function IncomePage(): JSX.Element {
                     <input type="time" value={shiftForm.endTime} onChange={(event) => setShiftForm((current) => ({ ...current, endTime: event.target.value }))} required />
                   </label>
                   <div className="stat-tile full-width">
-                    <small className="muted">{t('Stundensatz', 'Hourly rate')}: {shiftHourlyRate} €/h</small>
+                    <small className="muted">{t('Stundensatz', 'Hourly rate')}: {shiftHourlyRate} {currencySymbol}/h</small>
                     <strong>
                       {t('Berechnetes Einkommen', 'Calculated income')}:{' '}
                       {shiftPreview ? formatMoney(shiftPreview.amount, settings.currency, settings.privacyHideAmounts) : '—'}
@@ -613,5 +614,3 @@ export function IncomePage(): JSX.Element {
     </section>
   )
 }
-
-
