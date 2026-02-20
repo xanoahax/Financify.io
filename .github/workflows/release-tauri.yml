@@ -17,6 +17,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Resolve release tag
+        id: release_tag
+        shell: pwsh
+        run: |
+          if ("${{ github.ref_type }}" -eq "tag" -and "${{ github.ref_name }}") {
+            $tag = "${{ github.ref_name }}"
+          } else {
+            $version = (Get-Content src-tauri/tauri.conf.json | ConvertFrom-Json).version
+            $tag = "v$version"
+          }
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -36,8 +48,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: v__VERSION__
-          releaseName: financify.io v__VERSION__
+          tagName: ${{ steps.release_tag.outputs.tag }}
+          releaseName: financify.io ${{ steps.release_tag.outputs.tag }}
           releaseBody: |
             ## Changelog
             - Added desktop updater flow with startup check and update prompt (Install / Skip version / Ignore for now).
@@ -49,5 +61,12 @@ jobs:
             - Windows MSI installer
             - Windows NSIS setup
             - Updater signatures and metadata for in-app updates
-          releaseDraft: false
+          releaseDraft: true
           prerelease: false
+
+      - name: Publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release edit "${{ steps.release_tag.outputs.tag }}" --draft=false --latest
