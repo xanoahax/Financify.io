@@ -383,7 +383,7 @@ export function SubscriptionsPage(): JSX.Element {
         </article>
       </div>
 
-      <article className="card subscription-list-card">
+      <article className="card">
         <header className="section-header">
           <h2>{t('Aboliste', 'Subscription list')}</h2>
           <div className="filters">
@@ -458,7 +458,7 @@ export function SubscriptionsPage(): JSX.Element {
               ))}
             </tbody>
           </table>
-          {filtered.length === 0 ? <p className="empty-inline">{t('Keine Abos entsprechen den aktuellen Filtern.', 'No subscriptions match the current filters.')}</p> : null}
+          {filtered.length === 0 ? <p className="empty-inline table-empty-message">{t('Keine Abos entsprechen den aktuellen Filtern.', 'No subscriptions match the current filters.')}</p> : null}
         </div>
       </article>
     </section>

@@ -577,7 +577,7 @@ export function IncomePage(): JSX.Element {
               ))}
             </tbody>
           </table>
-          {tableEntries.length === 0 ? <p className="empty-inline">{t('Keine Einkommenseinträge für die ausgewählte Ansicht.', 'No income entries for the selected view.')}</p> : null}
+          {tableEntries.length === 0 ? <p className="empty-inline table-empty-message">{t('Keine Einkommenseinträge für die ausgewählte Ansicht.', 'No income entries for the selected view.')}</p> : null}
         </div>
       </article>
     </section>
