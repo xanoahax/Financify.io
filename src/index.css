@@ -525,6 +525,10 @@ td small {
   margin-bottom: var(--space-4);
 }
 
+.subscription-list-card .section-header {
+  margin-bottom: var(--space-5);
+}
+
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

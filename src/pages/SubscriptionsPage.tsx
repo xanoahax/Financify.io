@@ -383,7 +383,7 @@ export function SubscriptionsPage(): JSX.Element {
         </article>
       </div>
 
-      <article className="card">
+      <article className="card subscription-list-card">
         <header className="section-header">
           <h2>{t('Aboliste', 'Subscription list')}</h2>
           <div className="filters">
