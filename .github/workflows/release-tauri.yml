@@ -39,7 +39,15 @@ jobs:
           tagName: v__VERSION__
           releaseName: financify.io v__VERSION__
           releaseBody: |
-            Automated desktop release with updater artifacts.
-            Includes MSI and NSIS bundles for Windows.
+            ## Changelog
+            - Added desktop updater flow with startup check and update prompt (Install / Skip version / Ignore for now).
+            - Added manual update-check icon beside the version in Settings.
+            - Added GitHub Pages startup dialog with direct Desktop download link.
+            - Improved Data Management and export behavior for web + desktop workflows.
+
+            ## Artifacts
+            - Windows MSI installer
+            - Windows NSIS setup
+            - Updater signatures and metadata for in-app updates
           releaseDraft: false
           prerelease: false
