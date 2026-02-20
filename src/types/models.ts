@@ -1,0 +1,115 @@
+﻿export type ThemeMode = 'light' | 'dark' | 'glass' | 'system'
+
+export type SubscriptionInterval = 'monthly' | 'yearly' | 'four-weekly' | 'custom-months'
+
+export type SubscriptionStatus = 'active' | 'paused' | 'cancelled'
+
+export interface Subscription {
+  id: string
+  name: string
+  provider: string
+  category: string
+  tags: string[]
+  amount: number
+  currency?: string
+  interval: SubscriptionInterval
+  customIntervalMonths?: number
+  startDate: string
+  nextPaymentOverride?: string
+  noticePeriodDays: number
+  notes: string
+  link: string
+  status: SubscriptionStatus
+  endDate?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type IncomeRecurring = 'none' | 'weekly' | 'monthly' | 'custom'
+
+export interface IncomeEntry {
+  id: string
+  amount: number
+  date: string
+  source: string
+  tags: string[]
+  notes: string
+  recurring: IncomeRecurring
+  recurringIntervalDays?: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type Frequency = 'monthly' | 'yearly'
+
+export interface InterestScenarioInput {
+  name: string
+  startCapital: number
+  recurringContribution: number
+  contributionFrequency: Frequency
+  annualInterestRate: number
+  durationMonths: number
+  interestFrequency: Frequency
+  advancedEnabled: boolean
+  annualInflationRate: number
+  gainsTaxRate: number
+  annualContributionIncrease: number
+}
+
+export interface InterestScenario {
+  id: string
+  input: InterestScenarioInput
+  createdAt: string
+  updatedAt: string
+}
+
+export interface Settings {
+  theme: ThemeMode
+  accentColor: string
+  gradientOverlayEnabled: boolean
+  gradientColorA: string
+  gradientColorB: string
+  backgroundImageBlurEnabled: boolean
+  backgroundImageBlurAmount: number
+  reducedMotion: boolean
+  currency: string
+  decimals: number
+  foodAffairsHourlyRate: number
+  dateFormat: 'DD.MM.YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-DD'
+  startOfWeek: 'monday' | 'sunday'
+  privacyHideAmounts: boolean
+}
+
+export interface UiState {
+  sidebarCollapsed: boolean
+  globalSearch: string
+}
+
+export interface InterestPoint {
+  month: number
+  date: string
+  contribution: number
+  interestEarned: number
+  balance: number
+  totalContribution: number
+  totalInterest: number
+  realBalance?: number
+}
+
+export interface ToastMessage {
+  id: string
+  tone: 'success' | 'warning' | 'error' | 'info'
+  text: string
+  actionLabel?: string
+  action?: () => void
+  expiresInMs?: number
+}
+
+export interface AppBackup {
+  exportedAt: string
+  settings: Settings
+  backgroundImageDataUrl?: string | null
+  subscriptions: Subscription[]
+  incomeEntries: IncomeEntry[]
+  interestScenarios: InterestScenario[]
+}
