@@ -38,6 +38,7 @@ export default function App(): JSX.Element {
   useEffect(() => {
     const effectiveTheme = resolveTheme(settings.theme)
     document.documentElement.dataset.theme = effectiveTheme
+    document.documentElement.lang = language
     document.documentElement.dataset.gradientOverlay = settings.gradientOverlayEnabled ? 'on' : 'off'
     document.documentElement.dataset.motion = settings.reducedMotion ? 'reduced' : 'full'
     document.documentElement.style.setProperty('--accent', settings.accentColor)
@@ -48,6 +49,7 @@ export default function App(): JSX.Element {
     settings.gradientColorA,
     settings.gradientColorB,
     settings.gradientOverlayEnabled,
+    language,
     settings.reducedMotion,
     settings.theme,
   ])

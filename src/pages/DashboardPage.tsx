@@ -14,6 +14,7 @@ export function DashboardPage(): JSX.Element {
   const { subscriptions, incomeEntries, settings } = useAppContext()
   const today = todayString()
   const t = (de: string, en: string) => tx(settings.language, de, en)
+  const monthLocale = settings.language === 'de' ? 'de-DE' : 'en-US'
 
   const overview = useMemo(() => {
     const monthlySubscriptions = monthlyTotal(subscriptions)
@@ -21,7 +22,7 @@ export function DashboardPage(): JSX.Element {
     const monthIncome = sumIncome(monthIncomeEntries)
     const lastYearIncomeEntries = materializeIncomeEntriesForRange(incomeEntries, addDays(today, -365), today)
     const top = topSubscriptions(subscriptions, 3)
-    const trend = monthlyTrend(subscriptions, 6).map((item) => ({ label: monthLabel(item.month), value: item.value }))
+    const trend = monthlyTrend(subscriptions, 6).map((item) => ({ label: monthLabel(item.month, monthLocale), value: item.value }))
     const incomeMoM = monthOverMonthChange(lastYearIncomeEntries)
     return {
       monthlySubscriptions,
@@ -30,7 +31,7 @@ export function DashboardPage(): JSX.Element {
       trend,
       incomeMoM,
     }
-  }, [incomeEntries, subscriptions, today])
+  }, [incomeEntries, monthLocale, subscriptions, today])
 
   return (
     <section className="page">
@@ -68,14 +69,14 @@ export function DashboardPage(): JSX.Element {
           <h2>{t('Teuerste Abos', 'Most expensive subscriptions')}</h2>
         </header>
         {overview.top.length === 0 ? <p className="empty-inline">{t('Noch keine Abos vorhanden.', 'No subscriptions yet.')}</p> : null}
-        <BarChart data={overview.top.map((item) => ({ label: item.name, value: item.amount }))} />
+        <BarChart data={overview.top.map((item) => ({ label: item.name, value: item.amount }))} language={settings.language} />
       </article>
 
       <article className="card">
         <header className="section-header">
           <h2>{t('Abo-Trend', 'Subscription trend')}</h2>
         </header>
-        <LineChart data={overview.trend} />
+        <LineChart data={overview.trend} language={settings.language} />
       </article>
     </section>
   )

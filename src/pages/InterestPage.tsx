@@ -6,9 +6,9 @@ import { formatMoney, toPercent } from '../utils/format'
 import { tx } from '../utils/i18n'
 import { calculateInterestScenario } from '../utils/interest'
 
-function buildDefaultScenario(): InterestScenarioInput {
+function buildDefaultScenario(language: 'de' | 'en'): InterestScenarioInput {
   return {
-    name: 'Szenario A',
+    name: tx(language, 'Szenario A', 'Scenario A'),
     startCapital: 5000,
     recurringContribution: 250,
     contributionFrequency: 'monthly',
@@ -24,7 +24,7 @@ function buildDefaultScenario(): InterestScenarioInput {
 
 export function InterestPage(): JSX.Element {
   const { settings, scenarios, addScenario, deleteScenario } = useAppContext()
-  const [input, setInput] = useState<InterestScenarioInput>(() => buildDefaultScenario())
+  const [input, setInput] = useState<InterestScenarioInput>(() => buildDefaultScenario(settings.language))
   const [showDetails, setShowDetails] = useState(false)
   const [compareA, setCompareA] = useState<string>('')
   const [compareB, setCompareB] = useState<string>('')
@@ -179,7 +179,7 @@ export function InterestPage(): JSX.Element {
               >
                 {t('Szenario speichern', 'Save scenario')}
               </button>
-              <button type="button" className="button button-secondary" onClick={() => setInput(buildDefaultScenario())}>
+              <button type="button" className="button button-secondary" onClick={() => setInput(buildDefaultScenario(settings.language))}>
                 {t('Zurücksetzen', 'Reset')}
               </button>
             </div>
@@ -213,7 +213,7 @@ export function InterestPage(): JSX.Element {
               </div>
             ) : null}
           </div>
-          <LineChart data={chartData} />
+          <LineChart data={chartData} language={settings.language} />
           <div className="chips">
             {contributionVsInterest.map((item) => (
               <span key={item.label} className="chip">

@@ -35,6 +35,7 @@ export function StatsPage(): JSX.Element {
   const [customStart, setCustomStart] = useState(addDays(todayString(), -90))
   const [customEnd, setCustomEnd] = useState(todayString())
   const t = (de: string, en: string) => tx(settings.language, de, en)
+  const monthLocale = settings.language === 'de' ? 'de-DE' : 'en-US'
 
   const range = resolveRange(preset, customStart, customEnd)
   const rangeDays = rangeLengthDays(range.start, range.end)
@@ -59,12 +60,12 @@ export function StatsPage(): JSX.Element {
       estimatedSpend,
       cashflow: incomeTotal - estimatedSpend,
       incomeDelta,
-      monthlyIncomeSeries: incomeByMonth(incomeInRange).map((item) => ({ label: monthLabel(item.month), value: item.value })),
+      monthlyIncomeSeries: incomeByMonth(incomeInRange).map((item) => ({ label: monthLabel(item.month, monthLocale), value: item.value })),
       sourceSeries: sourceBreakdown(incomeInRange),
       categorySeries: categoryBreakdown(activeSubscriptions),
       previousRange: { start: previousStart, end: previousEnd },
     }
-  }, [incomeEntries, range.end, range.start, rangeDays, subscriptions])
+  }, [incomeEntries, monthLocale, range.end, range.start, rangeDays, subscriptions])
 
   return (
     <section className="page">
@@ -111,15 +112,15 @@ export function StatsPage(): JSX.Element {
       <div className="three-column">
         <article className="card">
           <h2>{t('Einkommenstrend', 'Income trend')}</h2>
-          <BarChart data={data.monthlyIncomeSeries} />
+          <BarChart data={data.monthlyIncomeSeries} language={settings.language} />
         </article>
         <article className="card">
           <h2>{t('Einkommensquellen', 'Income sources')}</h2>
-          <DonutChart data={data.sourceSeries} />
+          <DonutChart data={data.sourceSeries} language={settings.language} />
         </article>
         <article className="card">
           <h2>{t('Abo-Kategorien', 'Subscription categories')}</h2>
-          <DonutChart data={data.categorySeries} />
+          <DonutChart data={data.categorySeries} language={settings.language} />
         </article>
       </div>
     </section>

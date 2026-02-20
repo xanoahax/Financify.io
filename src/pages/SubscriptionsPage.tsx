@@ -89,6 +89,7 @@ export function SubscriptionsPage(): JSX.Element {
   const [confirmAction, setConfirmAction] = useState<ConfirmActionState | null>(null)
   const nameInputRef = useRef<HTMLInputElement | null>(null)
   const t = (de: string, en: string) => tx(settings.language, de, en)
+  const monthLocale = settings.language === 'de' ? 'de-DE' : 'en-US'
 
   const closeForm = useCallback((): void => {
     setIsFormOpen(false)
@@ -155,9 +156,9 @@ export function SubscriptionsPage(): JSX.Element {
       yearly: yearlyTotal(filtered),
       top: topSubscriptions(filtered, 5),
       categories: categoryBreakdown(filtered),
-      trend: monthlyTrend(filtered, 12).map((item) => ({ label: monthLabel(item.month), value: item.value })),
+      trend: monthlyTrend(filtered, 12).map((item) => ({ label: monthLabel(item.month, monthLocale), value: item.value })),
     }),
-    [filtered],
+    [filtered, monthLocale],
   )
 
   async function handleSave(event: React.FormEvent): Promise<void> {
@@ -370,15 +371,15 @@ export function SubscriptionsPage(): JSX.Element {
       <div className="three-column">
         <article className="card">
           <h2>{t('Top-Kosten', 'Top costs')}</h2>
-          <BarChart data={totals.top.map((item) => ({ label: item.name, value: monthlyEquivalent(item) }))} />
+          <BarChart data={totals.top.map((item) => ({ label: item.name, value: monthlyEquivalent(item) }))} language={settings.language} />
         </article>
         <article className="card">
           <h2>{t('Kategorienverteilung', 'Category breakdown')}</h2>
-          <DonutChart data={totals.categories} />
+          <DonutChart data={totals.categories} language={settings.language} />
         </article>
         <article className="card">
           <h2>{t('Trend (12 Monate)', 'Trend (12 months)')}</h2>
-          <LineChart data={totals.trend} />
+          <LineChart data={totals.trend} language={settings.language} />
         </article>
       </div>
 

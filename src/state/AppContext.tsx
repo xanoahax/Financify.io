@@ -23,7 +23,8 @@ import {
   saveInterestScenario,
   saveSubscription,
 } from '../data/repositories'
-import type { AppBackup, IncomeEntry, InterestScenario, InterestScenarioInput, Settings, Subscription, ToastMessage, UiState } from '../types/models'
+import type { AppBackup, AppLanguage, IncomeEntry, InterestScenario, InterestScenarioInput, Settings, Subscription, ToastMessage, UiState } from '../types/models'
+import { tx } from '../utils/i18n'
 
 export interface AppContextValue {
   loading: boolean
@@ -72,9 +73,9 @@ function uniqueById<T extends { id: string }>(rows: T[]): T[] {
   return [...map.values()]
 }
 
-function ensurePositiveNumber(value: number, fieldLabel: string): void {
+function ensurePositiveNumber(value: number, fieldLabel: string, language: AppLanguage): void {
   if (!Number.isFinite(value) || value < 0) {
-    throw new Error(`${fieldLabel} muss eine gültige nicht-negative Zahl sein.`)
+    throw new Error(tx(language, `${fieldLabel} muss eine gültige nicht-negative Zahl sein.`, `${fieldLabel} must be a valid non-negative number.`))
   }
 }
 
@@ -87,13 +88,13 @@ function normalizeTags(input: string[]): string[] {
 
 const MAX_BACKGROUND_FILE_BYTES = 3 * 1024 * 1024
 
-function readFileAsDataUrl(file: File): Promise<string> {
+function readFileAsDataUrl(file: File, language: AppLanguage): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
-    reader.onerror = () => reject(new Error('Ausgewählte Bilddatei konnte nicht gelesen werden.'))
+    reader.onerror = () => reject(new Error(tx(language, 'Ausgewählte Bilddatei konnte nicht gelesen werden.', 'Selected image file could not be read.')))
     reader.onload = () => {
       if (typeof reader.result !== 'string') {
-        reject(new Error('Ausgewählte Bilddatei konnte nicht verarbeitet werden.'))
+        reject(new Error(tx(language, 'Ausgewählte Bilddatei konnte nicht verarbeitet werden.', 'Selected image file could not be processed.')))
         return
       }
       resolve(reader.result)
@@ -146,7 +147,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
         if (mounted) {
           pushToast({
             tone: 'error',
-            text: error instanceof Error ? error.message : 'Lokale Daten konnten nicht geladen werden.',
+            text: error instanceof Error ? error.message : tx(settings.language, 'Lokale Daten konnten nicht geladen werden.', 'Local data could not be loaded.'),
             expiresInMs: 0,
           })
         }
@@ -160,7 +161,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
     return () => {
       mounted = false
     }
-  }, [pushToast])
+  }, [pushToast, settings.language])
 
   useEffect(() => {
     saveSettings(settings)
@@ -181,37 +182,37 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
   const setBackgroundImageFromFile = useCallback(
     async (file: File) => {
       if (!file.type.startsWith('image/')) {
-        throw new Error('Bitte wähle eine Bilddatei aus.')
+        throw new Error(tx(settings.language, 'Bitte wähle eine Bilddatei aus.', 'Please select an image file.'))
       }
       if (file.size > MAX_BACKGROUND_FILE_BYTES) {
-        throw new Error('Bild ist zu groß. Bitte eine Datei unter 3 MB wählen.')
+        throw new Error(tx(settings.language, 'Bild ist zu groß. Bitte eine Datei unter 3 MB wählen.', 'Image is too large. Please choose a file under 3 MB.'))
       }
-      const dataUrl = await readFileAsDataUrl(file)
+      const dataUrl = await readFileAsDataUrl(file, settings.language)
       try {
         saveBackgroundImageDataUrl(dataUrl)
       } catch {
-        throw new Error('Bild konnte lokal nicht gespeichert werden. Bitte ein kleineres Bild versuchen.')
+        throw new Error(tx(settings.language, 'Bild konnte lokal nicht gespeichert werden. Bitte ein kleineres Bild versuchen.', 'Image could not be saved locally. Please try a smaller image.'))
       }
       setBackgroundImageDataUrlState(dataUrl)
-      pushToast({ tone: 'success', text: 'Hintergrundbild aktualisiert.' })
+      pushToast({ tone: 'success', text: tx(settings.language, 'Hintergrundbild aktualisiert.', 'Background image updated.') })
     },
-    [pushToast],
+    [pushToast, settings.language],
   )
 
   const clearBackgroundImage = useCallback(() => {
     clearBackgroundImageDataUrl()
     setBackgroundImageDataUrlState(null)
-    pushToast({ tone: 'success', text: 'Hintergrundbild entfernt.' })
-  }, [pushToast])
+    pushToast({ tone: 'success', text: tx(settings.language, 'Hintergrundbild entfernt.', 'Background image removed.') })
+  }, [pushToast, settings.language])
 
   const addSubscription = useCallback(
     async (payload: Omit<Subscription, 'id' | 'createdAt' | 'updatedAt'>) => {
-      ensurePositiveNumber(payload.amount, 'Abo-Betrag')
+      ensurePositiveNumber(payload.amount, tx(settings.language, 'Abo-Betrag', 'Subscription amount'), settings.language)
       if (!payload.name.trim()) {
-        throw new Error('Abo-Name ist erforderlich.')
+        throw new Error(tx(settings.language, 'Abo-Name ist erforderlich.', 'Subscription name is required.'))
       }
       if (payload.customIntervalMonths && payload.customIntervalMonths < 1) {
-        throw new Error('Eigenes Intervall in Monaten muss mindestens 1 sein.')
+        throw new Error(tx(settings.language, 'Eigenes Intervall in Monaten muss mindestens 1 sein.', 'Custom interval in months must be at least 1.'))
       }
       const timestamp = nowIso()
       const next: Subscription = {
@@ -223,16 +224,16 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       }
       await saveSubscription(next)
       setSubscriptions((current) => [next, ...current])
-      pushToast({ tone: 'success', text: 'Abo gespeichert.' })
+      pushToast({ tone: 'success', text: tx(settings.language, 'Abo gespeichert.', 'Subscription saved.') })
     },
-    [pushToast],
+    [pushToast, settings.language],
   )
 
   const updateSubscription = useCallback(
     async (id: string, payload: Partial<Subscription>) => {
       const existing = subscriptions.find((item) => item.id === id)
       if (!existing) {
-        throw new Error('Abo nicht gefunden.')
+        throw new Error(tx(settings.language, 'Abo nicht gefunden.', 'Subscription not found.'))
       }
       const merged: Subscription = {
         ...existing,
@@ -240,12 +241,12 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
         tags: payload.tags ? normalizeTags(payload.tags) : existing.tags,
         updatedAt: nowIso(),
       }
-      ensurePositiveNumber(merged.amount, 'Abo-Betrag')
+      ensurePositiveNumber(merged.amount, tx(settings.language, 'Abo-Betrag', 'Subscription amount'), settings.language)
       await saveSubscription(merged)
       setSubscriptions((current) => current.map((item) => (item.id === id ? merged : item)))
-      pushToast({ tone: 'success', text: 'Abo aktualisiert.' })
+      pushToast({ tone: 'success', text: tx(settings.language, 'Abo aktualisiert.', 'Subscription updated.') })
     },
-    [pushToast, subscriptions],
+    [pushToast, settings.language, subscriptions],
   )
 
   const deleteSubscription = useCallback(
@@ -258,21 +259,21 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       setSubscriptions((current) => current.filter((item) => item.id !== id))
       pushToast({
         tone: 'warning',
-        text: 'Abo gelöscht.',
-        actionLabel: 'Rückgängig',
+        text: tx(settings.language, 'Abo gelöscht.', 'Subscription deleted.'),
+        actionLabel: tx(settings.language, 'Rückgängig', 'Undo'),
         action: () => {
           void saveSubscription(existing).then(() => setSubscriptions((current) => [existing, ...current]))
         },
       })
     },
-    [pushToast, subscriptions],
+    [pushToast, settings.language, subscriptions],
   )
 
   const addIncomeEntry = useCallback(
     async (payload: Omit<IncomeEntry, 'id' | 'createdAt' | 'updatedAt'>) => {
-      ensurePositiveNumber(payload.amount, 'Einkommensbetrag')
+      ensurePositiveNumber(payload.amount, tx(settings.language, 'Einkommensbetrag', 'Income amount'), settings.language)
       if (!payload.source.trim()) {
-        throw new Error('Einkommensquelle ist erforderlich.')
+        throw new Error(tx(settings.language, 'Einkommensquelle ist erforderlich.', 'Income source is required.'))
       }
       const timestamp = nowIso()
       const next: IncomeEntry = {
@@ -284,16 +285,16 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       }
       await saveIncomeEntry(next)
       setIncomeEntries((current) => [next, ...current])
-      pushToast({ tone: 'success', text: 'Einkommenseintrag gespeichert.' })
+      pushToast({ tone: 'success', text: tx(settings.language, 'Einkommenseintrag gespeichert.', 'Income entry saved.') })
     },
-    [pushToast],
+    [pushToast, settings.language],
   )
 
   const updateIncomeEntry = useCallback(
     async (id: string, payload: Partial<IncomeEntry>) => {
       const existing = incomeEntries.find((item) => item.id === id)
       if (!existing) {
-        throw new Error('Einkommenseintrag nicht gefunden.')
+        throw new Error(tx(settings.language, 'Einkommenseintrag nicht gefunden.', 'Income entry not found.'))
       }
       const merged: IncomeEntry = {
         ...existing,
@@ -301,12 +302,12 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
         tags: payload.tags ? normalizeTags(payload.tags) : existing.tags,
         updatedAt: nowIso(),
       }
-      ensurePositiveNumber(merged.amount, 'Einkommensbetrag')
+      ensurePositiveNumber(merged.amount, tx(settings.language, 'Einkommensbetrag', 'Income amount'), settings.language)
       await saveIncomeEntry(merged)
       setIncomeEntries((current) => current.map((item) => (item.id === id ? merged : item)))
-      pushToast({ tone: 'success', text: 'Einkommenseintrag aktualisiert.' })
+      pushToast({ tone: 'success', text: tx(settings.language, 'Einkommenseintrag aktualisiert.', 'Income entry updated.') })
     },
-    [incomeEntries, pushToast],
+    [incomeEntries, pushToast, settings.language],
   )
 
   const deleteIncomeEntry = useCallback(
@@ -319,14 +320,14 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       setIncomeEntries((current) => current.filter((item) => item.id !== id))
       pushToast({
         tone: 'warning',
-        text: 'Einkommenseintrag gelöscht.',
-        actionLabel: 'Rückgängig',
+        text: tx(settings.language, 'Einkommenseintrag gelöscht.', 'Income entry deleted.'),
+        actionLabel: tx(settings.language, 'Rückgängig', 'Undo'),
         action: () => {
           void saveIncomeEntry(existing).then(() => setIncomeEntries((current) => [existing, ...current]))
         },
       })
     },
-    [incomeEntries, pushToast],
+    [incomeEntries, pushToast, settings.language],
   )
 
   const addScenario = useCallback(
@@ -340,32 +341,32 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       }
       await saveInterestScenario(next)
       setScenarios((current) => [next, ...current])
-      pushToast({ tone: 'success', text: 'Szenario gespeichert.' })
+      pushToast({ tone: 'success', text: tx(settings.language, 'Szenario gespeichert.', 'Scenario saved.') })
     },
-    [pushToast],
+    [pushToast, settings.language],
   )
 
   const updateScenario = useCallback(
     async (id: string, payload: InterestScenarioInput) => {
       const existing = scenarios.find((item) => item.id === id)
       if (!existing) {
-        throw new Error('Szenario nicht gefunden.')
+        throw new Error(tx(settings.language, 'Szenario nicht gefunden.', 'Scenario not found.'))
       }
       const merged: InterestScenario = { ...existing, input: payload, updatedAt: nowIso() }
       await saveInterestScenario(merged)
       setScenarios((current) => current.map((item) => (item.id === id ? merged : item)))
-      pushToast({ tone: 'success', text: 'Szenario aktualisiert.' })
+      pushToast({ tone: 'success', text: tx(settings.language, 'Szenario aktualisiert.', 'Scenario updated.') })
     },
-    [pushToast, scenarios],
+    [pushToast, scenarios, settings.language],
   )
 
   const deleteScenario = useCallback(
     async (id: string) => {
       await removeInterestScenario(id)
       setScenarios((current) => current.filter((item) => item.id !== id))
-      pushToast({ tone: 'success', text: 'Szenario entfernt.' })
+      pushToast({ tone: 'success', text: tx(settings.language, 'Szenario entfernt.', 'Scenario removed.') })
     },
-    [pushToast],
+    [pushToast, settings.language],
   )
 
   const exportBackup = useCallback((): AppBackup => {
@@ -404,9 +405,15 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
           setBackgroundImageDataUrlState(null)
         }
       }
-      pushToast({ tone: 'success', text: `Backup importiert (${mode === 'replace' ? 'ersetzen' : 'zusammenführen'}).` })
+      pushToast({
+        tone: 'success',
+        text:
+          mode === 'replace'
+            ? tx(settings.language, 'Backup importiert (ersetzen).', 'Backup imported (replace).')
+            : tx(settings.language, 'Backup importiert (zusammenführen).', 'Backup imported (merge).'),
+      })
     },
-    [incomeEntries, pushToast, scenarios, subscriptions],
+    [incomeEntries, pushToast, scenarios, settings.language, subscriptions],
   )
 
   const contextValue = useMemo<AppContextValue>(

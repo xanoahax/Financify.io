@@ -77,10 +77,10 @@ export function endOfYear(input: string): string {
   return toDateStringLocal(new Date(date.getFullYear(), 11, 31, 12, 0, 0, 0))
 }
 
-export function monthLabel(key: string): string {
+export function monthLabel(key: string, locale?: string): string {
   const [year, month] = key.split('-').map(Number)
   const date = new Date(year, month - 1, 1)
-  return date.toLocaleDateString(undefined, { month: 'short', year: 'numeric' })
+  return date.toLocaleDateString(locale, { month: 'short', year: 'numeric' })
 }
 
 export function withinDays(input: string, daysAhead: number, fromDate = todayString()): boolean {

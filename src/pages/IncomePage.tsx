@@ -85,6 +85,7 @@ export function IncomePage(): JSX.Element {
   const dateInputRef = useRef<HTMLInputElement | null>(null)
   const shiftDateInputRef = useRef<HTMLInputElement | null>(null)
   const t = (de: string, en: string) => tx(settings.language, de, en)
+  const monthLocale = settings.language === 'de' ? 'de-DE' : 'en-US'
 
   const closeForm = useCallback((): void => {
     setIsFormOpen(false)
@@ -180,12 +181,12 @@ export function IncomePage(): JSX.Element {
     const monthly = incomeByMonth(rollingYearEntries)
     return {
       total: sumIncome(resolvedPeriodEntries),
-      monthSeries: monthly.map((item) => ({ label: monthLabel(item.month), value: item.value })).slice(-12),
+      monthSeries: monthly.map((item) => ({ label: monthLabel(item.month, monthLocale), value: item.value })).slice(-12),
       sourceSeries: sourceBreakdown(resolvedPeriodEntries),
       aggregates: monthStats(rollingYearEntries),
       mom: monthOverMonthChange(rollingYearEntries),
     }
-  }, [resolvedPeriodEntries, rollingYearEntries])
+  }, [monthLocale, resolvedPeriodEntries, rollingYearEntries])
 
   const foodAffairsHourlyRate = useMemo(() => {
     const rate = Number(settings.foodAffairsHourlyRate)
@@ -202,11 +203,12 @@ export function IncomePage(): JSX.Element {
         startTime: shiftForm.startTime,
         endTime: shiftForm.endTime,
         hourlyRate: foodAffairsHourlyRate,
+        language: settings.language,
       })
     } catch {
       return null
     }
-  }, [editId, foodAffairsHourlyRate, formMode, shiftForm.date, shiftForm.endTime, shiftForm.startTime])
+  }, [editId, foodAffairsHourlyRate, formMode, settings.language, shiftForm.date, shiftForm.endTime, shiftForm.startTime])
 
   async function onSubmit(event: React.FormEvent): Promise<void> {
     event.preventDefault()
@@ -218,6 +220,7 @@ export function IncomePage(): JSX.Element {
           startTime: shiftForm.startTime,
           endTime: shiftForm.endTime,
           hourlyRate: foodAffairsHourlyRate,
+          language: settings.language,
         })
         await addIncomeEntry({
           amount: result.amount,
@@ -365,13 +368,13 @@ export function IncomePage(): JSX.Element {
               ))}
             </select>
           </header>
-          <DonutChart data={stats.sourceSeries} />
+          <DonutChart data={stats.sourceSeries} language={settings.language} />
         </article>
         <article className="card">
           <header className="section-header">
             <h2>{t('Trend (12 Monate)', 'Trend (12 months)')}</h2>
           </header>
-          <LineChart data={stats.monthSeries} />
+          <LineChart data={stats.monthSeries} language={settings.language} />
         </article>
       </div>
 
@@ -535,7 +538,7 @@ export function IncomePage(): JSX.Element {
         <header className="section-header">
           <h2>{t('Einkommen pro Monat', 'Income per month')}</h2>
         </header>
-        <BarChart data={stats.monthSeries} />
+        <BarChart data={stats.monthSeries} language={settings.language} />
       </article>
 
       <article className="card">

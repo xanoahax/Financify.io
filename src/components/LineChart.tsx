@@ -1,4 +1,7 @@
-﻿interface LineChartPoint {
+import type { AppLanguage } from '../types/models'
+import { tx } from '../utils/i18n'
+
+interface LineChartPoint {
   label: string
   value: number
 }
@@ -6,11 +9,14 @@
 interface LineChartProps {
   data: LineChartPoint[]
   height?: number
+  language?: AppLanguage
 }
 
-export function LineChart({ data, height = 180 }: LineChartProps): JSX.Element {
+export function LineChart({ data, height = 180, language = 'de' }: LineChartProps): JSX.Element {
+  const t = (de: string, en: string) => tx(language, de, en)
+
   if (data.length === 0) {
-    return <p className="empty-inline">Noch keine Daten vorhanden.</p>
+    return <p className="empty-inline">{t('Noch keine Daten vorhanden.', 'No data available yet.')}</p>
   }
 
   const width = 640
@@ -36,7 +42,7 @@ export function LineChart({ data, height = 180 }: LineChartProps): JSX.Element {
 
   return (
     <div className="chart chart-line">
-      <svg viewBox={`0 0 ${width} ${chartHeight}`} role="img" aria-label="Liniendiagramm">
+      <svg viewBox={`0 0 ${width} ${chartHeight}`} role="img" aria-label={t('Liniendiagramm', 'Line chart')}>
         <path d={path} className="line-path" />
         {points.map((point, index) => {
           const [x, y] = point.split(',').map(Number)
