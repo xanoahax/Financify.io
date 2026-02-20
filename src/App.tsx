@@ -154,7 +154,7 @@ export default function App(): JSX.Element {
               aria-label={t('Globale Suche', 'Global search')}
             />
             <div className="topbar-actions">
-              <button type="button" className="button button-secondary" onClick={() => setPaletteOpen(true)}>
+              <button type="button" className="button button-secondary palette-launcher" onClick={() => setPaletteOpen(true)}>
                 {t('Cmd/Ctrl + K', 'Cmd/Ctrl + K')}
               </button>
             </div>

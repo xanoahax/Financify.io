@@ -12,9 +12,10 @@ import { tx } from '../utils/i18n'
 import { calculateShiftIncome } from '../utils/shiftIncome'
 
 type IncomeFormState = Omit<IncomeEntry, 'id' | 'createdAt' | 'updatedAt'>
-type IncomeFormMode = 'manual' | 'foodaffairs-shift'
+type IncomeFormMode = 'manual' | 'job-shift'
 
 interface ShiftLogFormState {
+  jobId: string
   date: string
   startTime: string
   endTime: string
@@ -25,8 +26,6 @@ interface IncomeDeleteConfirmState {
   source: string
   date: string
 }
-
-const FOOD_AFFAIRS_SOURCE = 'FoodAffairs'
 
 function parseTags(input: string): string[] {
   return input
@@ -60,8 +59,9 @@ function buildDefaultForm(sourceDefault: string): IncomeFormState {
   }
 }
 
-function buildDefaultShiftForm(): ShiftLogFormState {
+function buildDefaultShiftForm(defaultJobId: string): ShiftLogFormState {
   return {
+    jobId: defaultJobId,
     date: todayString(),
     startTime: '09:00',
     endTime: '17:00',
@@ -70,10 +70,12 @@ function buildDefaultShiftForm(): ShiftLogFormState {
 
 export function IncomePage(): JSX.Element {
   const { incomeEntries, settings, uiState, setUiState, addIncomeEntry, updateIncomeEntry, deleteIncomeEntry } = useAppContext()
+  const shiftJobs = settings.shiftJobs
+  const resolvedDefaultShiftJobId = shiftJobs.some((job) => job.id === settings.defaultShiftJobId) ? settings.defaultShiftJobId : (shiftJobs[0]?.id ?? '')
   const [searchParams, setSearchParams] = useSearchParams()
   const [form, setForm] = useState<IncomeFormState>(() => buildDefaultForm(tx(settings.language, 'Gehalt', 'Salary')))
   const [formMode, setFormMode] = useState<IncomeFormMode>('manual')
-  const [shiftForm, setShiftForm] = useState<ShiftLogFormState>(buildDefaultShiftForm())
+  const [shiftForm, setShiftForm] = useState<ShiftLogFormState>(buildDefaultShiftForm(resolvedDefaultShiftJobId))
   const [editId, setEditId] = useState<string | null>(null)
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [tagInput, setTagInput] = useState('')
@@ -86,16 +88,20 @@ export function IncomePage(): JSX.Element {
   const shiftDateInputRef = useRef<HTMLInputElement | null>(null)
   const t = (de: string, en: string) => tx(settings.language, de, en)
   const monthLocale = settings.language === 'de' ? 'de-DE' : 'en-US'
+  const selectedShiftJob = useMemo(
+    () => shiftJobs.find((job) => job.id === shiftForm.jobId) ?? shiftJobs.find((job) => job.id === resolvedDefaultShiftJobId) ?? null,
+    [resolvedDefaultShiftJobId, shiftForm.jobId, shiftJobs],
+  )
 
   const closeForm = useCallback((): void => {
     setIsFormOpen(false)
     setEditId(null)
     setFormMode('manual')
     setForm(buildDefaultForm(tx(settings.language, 'Gehalt', 'Salary')))
-    setShiftForm(buildDefaultShiftForm())
+    setShiftForm(buildDefaultShiftForm(resolvedDefaultShiftJobId))
     setTagInput('')
     setFormError('')
-  }, [settings.language])
+  }, [resolvedDefaultShiftJobId, settings.language])
 
   useEffect(() => {
     if (searchParams.get('quickAdd') !== '1') {
@@ -106,7 +112,7 @@ export function IncomePage(): JSX.Element {
       setEditId(null)
       setFormMode('manual')
       setForm(buildDefaultForm(tx(settings.language, 'Gehalt', 'Salary')))
-      setShiftForm(buildDefaultShiftForm())
+      setShiftForm(buildDefaultShiftForm(resolvedDefaultShiftJobId))
       setTagInput('')
       setFormError('')
       window.requestAnimationFrame(() => amountInputRef.current?.focus())
@@ -115,7 +121,7 @@ export function IncomePage(): JSX.Element {
       setSearchParams(nextParams, { replace: true })
     })
     return () => window.cancelAnimationFrame(frame)
-  }, [searchParams, setSearchParams, settings.language])
+  }, [resolvedDefaultShiftJobId, searchParams, setSearchParams, settings.language])
 
   useEffect(() => {
     if (!isFormOpen && !confirmDelete) {
@@ -188,13 +194,13 @@ export function IncomePage(): JSX.Element {
     }
   }, [monthLocale, resolvedPeriodEntries, rollingYearEntries])
 
-  const foodAffairsHourlyRate = useMemo(() => {
-    const rate = Number(settings.foodAffairsHourlyRate)
+  const shiftHourlyRate = useMemo(() => {
+    const rate = Number(selectedShiftJob?.hourlyRate)
     return Number.isFinite(rate) && rate > 0 ? rate : 18
-  }, [settings.foodAffairsHourlyRate])
+  }, [selectedShiftJob?.hourlyRate])
 
   const shiftPreview = useMemo(() => {
-    if (editId || formMode !== 'foodaffairs-shift') {
+    if (editId || formMode !== 'job-shift' || !selectedShiftJob) {
       return null
     }
     try {
@@ -202,31 +208,34 @@ export function IncomePage(): JSX.Element {
         date: shiftForm.date,
         startTime: shiftForm.startTime,
         endTime: shiftForm.endTime,
-        hourlyRate: foodAffairsHourlyRate,
+        hourlyRate: shiftHourlyRate,
         language: settings.language,
       })
     } catch {
       return null
     }
-  }, [editId, foodAffairsHourlyRate, formMode, settings.language, shiftForm.date, shiftForm.endTime, shiftForm.startTime])
+  }, [editId, formMode, selectedShiftJob, settings.language, shiftForm.date, shiftForm.endTime, shiftForm.startTime, shiftHourlyRate])
 
   async function onSubmit(event: React.FormEvent): Promise<void> {
     event.preventDefault()
     try {
       setFormError('')
-      if (!editId && formMode === 'foodaffairs-shift') {
+      if (!editId && formMode === 'job-shift') {
+        if (!selectedShiftJob) {
+          throw new Error(t('Kein Job konfiguriert. Bitte zuerst in den Einstellungen einen Job anlegen.', 'No job configured. Please add a job in settings first.'))
+        }
         const result = calculateShiftIncome({
           date: shiftForm.date,
           startTime: shiftForm.startTime,
           endTime: shiftForm.endTime,
-          hourlyRate: foodAffairsHourlyRate,
+          hourlyRate: shiftHourlyRate,
           language: settings.language,
         })
         await addIncomeEntry({
           amount: result.amount,
           date: shiftForm.date,
-          source: FOOD_AFFAIRS_SOURCE,
-          tags: ['FoodAffairs', t('Dienst', 'Shift')],
+          source: selectedShiftJob.name,
+          tags: [selectedShiftJob.name, t('Dienst', 'Shift')],
           notes: t(
             `Dienst ${shiftForm.startTime}-${shiftForm.endTime}${result.crossesMidnight ? ' (über Mitternacht)' : ''}`,
             `Shift ${shiftForm.startTime}-${shiftForm.endTime}${result.crossesMidnight ? ' (overnight)' : ''}`,
@@ -268,7 +277,7 @@ export function IncomePage(): JSX.Element {
       recurring: item.recurring,
       recurringIntervalDays: item.recurringIntervalDays,
     })
-    setShiftForm(buildDefaultShiftForm())
+    setShiftForm(buildDefaultShiftForm(resolvedDefaultShiftJobId))
     setTagInput(item.tags.join(', '))
     setFormError('')
     window.requestAnimationFrame(() => dateInputRef.current?.focus())
@@ -279,11 +288,11 @@ export function IncomePage(): JSX.Element {
     setEditId(null)
     setFormMode(nextMode)
     setForm(buildDefaultForm(t('Gehalt', 'Salary')))
-    setShiftForm(buildDefaultShiftForm())
+    setShiftForm(buildDefaultShiftForm(resolvedDefaultShiftJobId))
     setTagInput('')
     setFormError('')
     window.requestAnimationFrame(() => {
-      if (nextMode === 'foodaffairs-shift') {
+      if (nextMode === 'job-shift') {
         shiftDateInputRef.current?.focus()
         return
       }
@@ -316,8 +325,14 @@ export function IncomePage(): JSX.Element {
           <button type="button" className="button button-primary" onClick={() => openAddForm('manual')}>
             {t('Einkommen hinzufügen', 'Add income')}
           </button>
-          <button type="button" className="button button-secondary" onClick={() => openAddForm('foodaffairs-shift')}>
-            {t('FoodAffairs-Dienst loggen', 'Log FoodAffairs shift')}
+          <button
+            type="button"
+            className="button button-secondary"
+            onClick={() => openAddForm('job-shift')}
+            disabled={shiftJobs.length === 0}
+            title={shiftJobs.length === 0 ? t('Bitte zuerst einen Job in Einstellungen anlegen.', 'Please add a job in settings first.') : undefined}
+          >
+            {t('Dienst loggen', 'Log shift')}
           </button>
         </div>
         <div className="page-actions">
@@ -383,7 +398,7 @@ export function IncomePage(): JSX.Element {
           <article className="card form-modal" onClick={(event) => event.stopPropagation()}>
             <header className="section-header">
               <h2>
-                {editId ? t('Einkommen bearbeiten', 'Edit income') : formMode === 'foodaffairs-shift' ? t('FoodAffairs-Dienst loggen', 'Log FoodAffairs shift') : t('Einkommen hinzufügen', 'Add income')}
+                {editId ? t('Einkommen bearbeiten', 'Edit income') : formMode === 'job-shift' ? t('Dienst loggen', 'Log shift') : t('Einkommen hinzufügen', 'Add income')}
               </h2>
               <button type="button" className="icon-button" onClick={closeForm} aria-label={t('Popup schließen', 'Close popup')}>
                 x
@@ -404,28 +419,43 @@ export function IncomePage(): JSX.Element {
                 </button>
                 <button
                   type="button"
-                  className={formMode === 'foodaffairs-shift' ? 'active' : ''}
+                  className={formMode === 'job-shift' ? 'active' : ''}
                   onClick={() => {
-                    setFormMode('foodaffairs-shift')
+                    setFormMode('job-shift')
                     setFormError('')
                     window.requestAnimationFrame(() => shiftDateInputRef.current?.focus())
                   }}
+                  disabled={shiftJobs.length === 0}
                 >
-                  {t('FoodAffairs-Dienst', 'FoodAffairs shift')}
+                  {t('Job-Dienst', 'Job shift')}
                 </button>
               </div>
             ) : null}
             {formError ? <p className="error-text">{formError}</p> : null}
             <form className="form-grid" onSubmit={onSubmit}>
-              {!editId && formMode === 'foodaffairs-shift' ? (
+              {!editId && formMode === 'job-shift' ? (
                 <>
+                  <label>
+                    {t('Job', 'Job')}
+                    <select
+                      value={shiftForm.jobId}
+                      onChange={(event) => setShiftForm((current) => ({ ...current, jobId: event.target.value }))}
+                      required
+                    >
+                      {shiftJobs.map((job) => (
+                        <option key={job.id} value={job.id}>
+                          {job.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                   <label>
                     {t('Datum', 'Date')}
                     <input ref={shiftDateInputRef} type="date" value={shiftForm.date} onChange={(event) => setShiftForm((current) => ({ ...current, date: event.target.value }))} required />
                   </label>
                   <label>
                     {t('Quelle', 'Source')}
-                    <input value={FOOD_AFFAIRS_SOURCE} readOnly aria-readonly="true" />
+                    <input value={selectedShiftJob?.name ?? ''} readOnly aria-readonly="true" />
                   </label>
                   <label>
                     {t('Start', 'Start')}
@@ -436,7 +466,7 @@ export function IncomePage(): JSX.Element {
                     <input type="time" value={shiftForm.endTime} onChange={(event) => setShiftForm((current) => ({ ...current, endTime: event.target.value }))} required />
                   </label>
                   <div className="stat-tile full-width">
-                    <small className="muted">{t('Stundensatz', 'Hourly rate')}: {foodAffairsHourlyRate} €/h</small>
+                    <small className="muted">{t('Stundensatz', 'Hourly rate')}: {shiftHourlyRate} €/h</small>
                     <strong>
                       {t('Berechnetes Einkommen', 'Calculated income')}:{' '}
                       {shiftPreview ? formatMoney(shiftPreview.amount, settings.currency, settings.decimals, settings.privacyHideAmounts) : '—'}
@@ -498,7 +528,7 @@ export function IncomePage(): JSX.Element {
 
               <div className="form-actions full-width">
                 <button type="submit" className="button button-primary">
-                  {editId ? t('Aktualisieren', 'Update') : formMode === 'foodaffairs-shift' ? t('Dienst speichern', 'Save shift') : t('Speichern', 'Save')}
+                  {editId ? t('Aktualisieren', 'Update') : formMode === 'job-shift' ? t('Dienst speichern', 'Save shift') : t('Speichern', 'Save')}
                 </button>
                 <button type="button" className="button button-secondary" onClick={closeForm}>
                   {t('Abbrechen', 'Cancel')}
@@ -583,3 +613,5 @@ export function IncomePage(): JSX.Element {
     </section>
   )
 }
+
+

@@ -2,6 +2,7 @@
 import {
   clearBackgroundImageDataUrl,
   defaultSettings,
+  defaultUiState,
   loadBackgroundImageDataUrl,
   loadSettings,
   loadUiState,
@@ -23,7 +24,18 @@ import {
   saveInterestScenario,
   saveSubscription,
 } from '../data/repositories'
-import type { AppBackup, AppLanguage, IncomeEntry, InterestScenario, InterestScenarioInput, Settings, Subscription, ToastMessage, UiState } from '../types/models'
+import type {
+  AppBackup,
+  AppLanguage,
+  IncomeEntry,
+  InterestScenario,
+  InterestScenarioInput,
+  Settings,
+  ShiftJobConfig,
+  Subscription,
+  ToastMessage,
+  UiState,
+} from '../types/models'
 import { tx } from '../utils/i18n'
 
 export interface AppContextValue {
@@ -84,6 +96,57 @@ function normalizeTags(input: string[]): string[] {
     .map((item) => item.trim())
     .filter((item) => item.length > 0)
     .slice(0, 10)
+}
+
+function normalizeImportedShiftJobs(raw: unknown): ShiftJobConfig[] {
+  if (!Array.isArray(raw)) {
+    return []
+  }
+  return raw
+    .map((row) => {
+      if (!row || typeof row !== 'object') {
+        return null
+      }
+      const job = row as { id?: unknown; name?: unknown; hourlyRate?: unknown }
+      const name = typeof job.name === 'string' ? job.name.trim() : ''
+      const hourlyRate = Number(job.hourlyRate)
+      if (!name || !Number.isFinite(hourlyRate) || hourlyRate <= 0) {
+        return null
+      }
+      const id = typeof job.id === 'string' && job.id.trim() ? job.id : makeId()
+      return { id, name, hourlyRate }
+    })
+    .filter((job): job is ShiftJobConfig => job !== null)
+}
+
+function normalizeImportedSettings(raw: unknown): Settings {
+  if (!raw || typeof raw !== 'object') {
+    return defaultSettings
+  }
+  const candidate = raw as Partial<Settings> & { shiftJobs?: unknown; defaultShiftJobId?: unknown }
+  const shiftJobs = normalizeImportedShiftJobs(candidate.shiftJobs)
+  const defaultShiftJobId =
+    typeof candidate.defaultShiftJobId === 'string' && shiftJobs.some((job) => job.id === candidate.defaultShiftJobId)
+      ? candidate.defaultShiftJobId
+      : shiftJobs[0]?.id ?? ''
+
+  return {
+    ...defaultSettings,
+    ...candidate,
+    shiftJobs,
+    defaultShiftJobId,
+  }
+}
+
+function normalizeImportedUiState(raw: unknown): UiState {
+  if (!raw || typeof raw !== 'object') {
+    return defaultUiState
+  }
+  const candidate = raw as Partial<UiState>
+  return {
+    ...defaultUiState,
+    ...candidate,
+  }
 }
 
 const MAX_BACKGROUND_FILE_BYTES = 3 * 1024 * 1024
@@ -373,18 +436,22 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
     return {
       exportedAt: nowIso(),
       settings,
+      uiState,
       backgroundImageDataUrl,
       subscriptions,
       incomeEntries,
       interestScenarios: scenarios,
     }
-  }, [backgroundImageDataUrl, incomeEntries, scenarios, settings, subscriptions])
+  }, [backgroundImageDataUrl, incomeEntries, scenarios, settings, subscriptions, uiState])
 
   const importBackup = useCallback(
     async (payload: AppBackup, mode: 'replace' | 'merge') => {
-      const mergedSubscriptions = mode === 'replace' ? payload.subscriptions : uniqueById([...subscriptions, ...payload.subscriptions])
-      const mergedIncome = mode === 'replace' ? payload.incomeEntries : uniqueById([...incomeEntries, ...payload.incomeEntries])
-      const mergedScenarios = mode === 'replace' ? payload.interestScenarios : uniqueById([...scenarios, ...payload.interestScenarios])
+      const safeSubscriptions = Array.isArray(payload.subscriptions) ? payload.subscriptions : []
+      const safeIncomeEntries = Array.isArray(payload.incomeEntries) ? payload.incomeEntries : []
+      const safeScenarios = Array.isArray(payload.interestScenarios) ? payload.interestScenarios : []
+      const mergedSubscriptions = mode === 'replace' ? safeSubscriptions : uniqueById([...subscriptions, ...safeSubscriptions])
+      const mergedIncome = mode === 'replace' ? safeIncomeEntries : uniqueById([...incomeEntries, ...safeIncomeEntries])
+      const mergedScenarios = mode === 'replace' ? safeScenarios : uniqueById([...scenarios, ...safeScenarios])
 
       await Promise.all([
         replaceSubscriptions(mergedSubscriptions),
@@ -396,11 +463,14 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       setIncomeEntries(mergedIncome)
       setScenarios(mergedScenarios)
       if (mode === 'replace') {
-        setSettingsState({ ...defaultSettings, ...payload.settings })
-        if (payload.backgroundImageDataUrl) {
+        const normalizedSettings = normalizeImportedSettings(payload.settings)
+        const normalizedUiState = normalizeImportedUiState(payload.uiState)
+        setSettingsState(normalizedSettings)
+        setUiStateState(normalizedUiState)
+        if (typeof payload.backgroundImageDataUrl === 'string' && payload.backgroundImageDataUrl.startsWith('data:image/')) {
           saveBackgroundImageDataUrl(payload.backgroundImageDataUrl)
           setBackgroundImageDataUrlState(payload.backgroundImageDataUrl)
-        } else if (payload.backgroundImageDataUrl === null) {
+        } else {
           clearBackgroundImageDataUrl()
           setBackgroundImageDataUrlState(null)
         }

@@ -338,7 +338,7 @@ export function InterestPage(): JSX.Element {
             </article>
           </div>
         ) : (
-          <p className="empty-inline">{t('Wähle zwei Szenarien, um die Ergebnisse zu vergleichen.', 'Choose two scenarios to compare results.')}</p>
+          <p className="empty-inline table-empty-message">{t('Wähle zwei Szenarien, um die Ergebnisse zu vergleichen.', 'Choose two scenarios to compare results.')}</p>
         )}
       </article>
     </section>

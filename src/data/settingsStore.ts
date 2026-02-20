@@ -1,12 +1,13 @@
-﻿import type { Settings, UiState } from '../types/models'
+import type { Settings, ShiftJobConfig, UiState } from '../types/models'
 
 const SETTINGS_KEY = 'financify.settings'
 const UI_STATE_KEY = 'financify.ui-state'
 const BACKGROUND_IMAGE_KEY = 'financify.background-image'
+const LEGACY_MIGRATION_SHIFT_JOB_ID = 'job-legacy-foodaffairs'
 
 export const defaultSettings: Settings = {
   language: 'de',
-  theme: 'system',
+  theme: 'glass',
   accentColor: '#0a84ff',
   gradientOverlayEnabled: true,
   gradientColorA: '#0a84ff',
@@ -16,7 +17,8 @@ export const defaultSettings: Settings = {
   reducedMotion: false,
   currency: 'EUR',
   decimals: 2,
-  foodAffairsHourlyRate: 18,
+  shiftJobs: [],
+  defaultShiftJobId: '',
   dateFormat: 'DD.MM.YYYY',
   startOfWeek: 'monday',
   privacyHideAmounts: false,
@@ -38,8 +40,49 @@ function parseJson<T>(raw: string | null, fallback: T): T {
   }
 }
 
+function normalizeShiftJobs(raw: unknown, legacyRate: unknown): ShiftJobConfig[] {
+  const rows = Array.isArray(raw) ? raw : []
+  const jobs = rows
+    .map((row) => {
+      if (!row || typeof row !== 'object') {
+        return null
+      }
+      const source = row as { id?: unknown; name?: unknown; hourlyRate?: unknown }
+      const name = typeof source.name === 'string' ? source.name.trim() : ''
+      const hourlyRate = Number(source.hourlyRate)
+      if (!name || !Number.isFinite(hourlyRate) || hourlyRate <= 0) {
+        return null
+      }
+      const id = typeof source.id === 'string' && source.id.trim() ? source.id : `job-${crypto.randomUUID()}`
+      return { id, name, hourlyRate }
+    })
+    .filter((job): job is ShiftJobConfig => job !== null)
+
+  if (jobs.length > 0) {
+    return jobs
+  }
+
+  const migratedRate = Number(legacyRate)
+  if (Number.isFinite(migratedRate) && migratedRate > 0) {
+    return [{ id: LEGACY_MIGRATION_SHIFT_JOB_ID, name: 'FoodAffairs', hourlyRate: migratedRate }]
+  }
+  return []
+}
+
 export function loadSettings(): Settings {
-  return parseJson(window.localStorage.getItem(SETTINGS_KEY), defaultSettings)
+  const parsed = parseJson<Record<string, unknown>>(window.localStorage.getItem(SETTINGS_KEY), defaultSettings as unknown as Record<string, unknown>)
+  const shiftJobs = normalizeShiftJobs(parsed.shiftJobs, parsed.foodAffairsHourlyRate)
+  const defaultShiftJobId =
+    typeof parsed.defaultShiftJobId === 'string' && shiftJobs.some((job) => job.id === parsed.defaultShiftJobId)
+      ? parsed.defaultShiftJobId
+      : shiftJobs[0]?.id ?? ''
+
+  return {
+    ...defaultSettings,
+    ...parsed,
+    shiftJobs,
+    defaultShiftJobId,
+  }
 }
 
 export function saveSettings(settings: Settings): void {

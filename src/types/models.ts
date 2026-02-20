@@ -43,6 +43,12 @@ export interface IncomeEntry {
 
 export type Frequency = 'monthly' | 'yearly'
 
+export interface ShiftJobConfig {
+  id: string
+  name: string
+  hourlyRate: number
+}
+
 export interface InterestScenarioInput {
   name: string
   startCapital: number
@@ -76,7 +82,8 @@ export interface Settings {
   reducedMotion: boolean
   currency: string
   decimals: number
-  foodAffairsHourlyRate: number
+  shiftJobs: ShiftJobConfig[]
+  defaultShiftJobId: string
   dateFormat: 'DD.MM.YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-DD'
   startOfWeek: 'monday' | 'sunday'
   privacyHideAmounts: boolean
@@ -110,7 +117,8 @@ export interface ToastMessage {
 export interface AppBackup {
   exportedAt: string
   settings: Settings
-  backgroundImageDataUrl?: string | null
+  uiState: UiState
+  backgroundImageDataUrl: string | null
   subscriptions: Subscription[]
   incomeEntries: IncomeEntry[]
   interestScenarios: InterestScenario[]
