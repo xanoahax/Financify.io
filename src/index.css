@@ -232,6 +232,7 @@ td small {
   min-height: 100%;
   position: relative;
   z-index: 1;
+  transition: grid-template-columns 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .background-gradient-layer,
@@ -320,20 +321,22 @@ td small {
 }
 
 .sidebar-collapsed .sidebar header strong {
-  display: none;
-}
-
-.sidebar-collapsed .sidebar header {
-  justify-content: center;
+  opacity: 0;
+  max-width: 0;
+  transform: translateX(-8px);
 }
 
 .sidebar-collapsed .nav-link {
-  justify-content: center;
-  padding-inline: 0;
+  width: 44px;
+  margin-inline: auto;
+  gap: 0;
+  padding-inline: 13px;
 }
 
 .sidebar-collapsed .nav-label {
-  display: none;
+  opacity: 0;
+  max-width: 0;
+  transform: translateX(-8px);
 }
 
 .sidebar {
@@ -344,6 +347,7 @@ td small {
   position: sticky;
   top: 0;
   max-height: 100vh;
+  transition: padding 260ms cubic-bezier(0.2, 0.8, 0.2, 1), border-color 200ms ease;
 }
 
 .sidebar header {
@@ -356,6 +360,15 @@ td small {
 .sidebar header strong {
   font-size: 1.2rem;
   letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  max-width: 180px;
+  opacity: 1;
+  transform: translateX(0);
+  transition:
+    opacity 180ms ease,
+    max-width 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform 220ms ease;
 }
 
 .sidebar nav {
@@ -365,13 +378,21 @@ td small {
 
 .nav-link {
   display: flex;
+  justify-content: flex-start;
   align-items: center;
   gap: var(--space-2);
+  width: 100%;
   border-radius: 12px;
   padding: 11px var(--space-3);
   text-decoration: none;
   color: var(--text-muted);
-  transition: background-color 0.2s ease, color 0.2s ease;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease,
+    gap 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    padding 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    width 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    margin 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .nav-icon {
@@ -383,7 +404,16 @@ td small {
 }
 
 .nav-label {
+  display: block;
   white-space: nowrap;
+  overflow: hidden;
+  max-width: 180px;
+  opacity: 1;
+  transform: translateX(0);
+  transition:
+    opacity 180ms ease,
+    max-width 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform 220ms ease;
 }
 
 .nav-link:hover,
