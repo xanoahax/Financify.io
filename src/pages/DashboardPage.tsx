@@ -1,17 +1,19 @@
-﻿import { useMemo } from 'react'
+import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { BarChart } from '../components/BarChart'
 import { LineChart } from '../components/LineChart'
 import { StatCard } from '../components/StatCard'
 import { useAppContext } from '../state/useAppContext'
 import { addDays, endOfMonth, monthLabel, startOfMonth, todayString } from '../utils/date'
-import { materializeIncomeEntriesForRange, monthOverMonthChange, sumIncome } from '../utils/income'
 import { formatMoney, toPercent } from '../utils/format'
+import { materializeIncomeEntriesForRange, monthOverMonthChange, sumIncome } from '../utils/income'
+import { tx } from '../utils/i18n'
 import { monthlyTotal, monthlyTrend, topSubscriptions } from '../utils/subscription'
 
 export function DashboardPage(): JSX.Element {
   const { subscriptions, incomeEntries, settings } = useAppContext()
   const today = todayString()
+  const t = (de: string, en: string) => tx(settings.language, de, en)
 
   const overview = useMemo(() => {
     const monthlySubscriptions = monthlyTotal(subscriptions)
@@ -33,29 +35,29 @@ export function DashboardPage(): JSX.Element {
   return (
     <section className="page">
       <header className="page-header">
-        <h1>Übersicht</h1>
-        <p className="muted">Deine Finanzen auf einen Blick.</p>
+        <h1>{t('Übersicht', 'Overview')}</h1>
+        <p className="muted">{t('Deine Finanzen auf einen Blick.', 'Your finances at a glance.')}</p>
       </header>
 
       <div className="stats-grid">
         <StatCard
-          label="Abos pro Monat"
+          label={t('Abos pro Monat', 'Subscriptions per month')}
           value={formatMoney(overview.monthlySubscriptions, settings.currency, settings.decimals, settings.privacyHideAmounts)}
-          hint="Aktive und pausierte Abos"
+          hint={t('Aktive und pausierte Abos', 'Active and paused subscriptions')}
         />
         <StatCard
-          label="Einkommen diesen Monat"
+          label={t('Einkommen diesen Monat', 'Income this month')}
           value={formatMoney(overview.monthIncome, settings.currency, settings.decimals, settings.privacyHideAmounts)}
-          hint={`Vgl. Vormonat: ${toPercent(overview.incomeMoM)}`}
+          hint={`${t('Vgl. Vormonat', 'vs previous month')}: ${toPercent(overview.incomeMoM)}`}
         />
         <article className="card stat-card">
-          <p className="muted">Schnellaktionen</p>
+          <p className="muted">{t('Schnellaktionen', 'Quick actions')}</p>
           <div className="quick-actions-list">
             <Link to="/subscriptions?quickAdd=1" className="button button-secondary">
-              Abo hinzufügen
+              {t('Abo hinzufügen', 'Add subscription')}
             </Link>
             <Link to="/income?quickAdd=1" className="button button-secondary">
-              Einkommen hinzufügen
+              {t('Einkommen hinzufügen', 'Add income')}
             </Link>
           </div>
         </article>
@@ -63,19 +65,18 @@ export function DashboardPage(): JSX.Element {
 
       <article className="card">
         <header className="section-header">
-          <h2>Teuerste Abos</h2>
+          <h2>{t('Teuerste Abos', 'Most expensive subscriptions')}</h2>
         </header>
-        {overview.top.length === 0 ? <p className="empty-inline">Noch keine Abos vorhanden.</p> : null}
+        {overview.top.length === 0 ? <p className="empty-inline">{t('Noch keine Abos vorhanden.', 'No subscriptions yet.')}</p> : null}
         <BarChart data={overview.top.map((item) => ({ label: item.name, value: item.amount }))} />
       </article>
 
       <article className="card">
         <header className="section-header">
-          <h2>Abo-Trend</h2>
+          <h2>{t('Abo-Trend', 'Subscription trend')}</h2>
         </header>
         <LineChart data={overview.trend} />
       </article>
     </section>
   )
 }
-

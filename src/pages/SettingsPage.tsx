@@ -1,7 +1,8 @@
-﻿import { useState } from 'react'
+import { useState } from 'react'
 import { useAppContext } from '../state/useAppContext'
 import type { AppBackup } from '../types/models'
 import { incomesToCsv, subscriptionsToCsv, triggerDownload } from '../utils/csv'
+import { tx } from '../utils/i18n'
 
 const accentPresets = ['#0a84ff', '#2ec4b6', '#ff9f0a', '#bf5af2', '#ff375f', '#6e6e73']
 
@@ -20,6 +21,7 @@ export function SettingsPage(): JSX.Element {
   const [importMode, setImportMode] = useState<'replace' | 'merge'>('replace')
   const [importError, setImportError] = useState('')
   const [backgroundError, setBackgroundError] = useState('')
+  const t = (de: string, en: string) => tx(settings.language, de, en)
 
   function exportJson(): void {
     const payload = exportBackup()
@@ -43,7 +45,7 @@ export function SettingsPage(): JSX.Element {
       await importBackup(parsed, importMode)
       event.target.value = ''
     } catch (error) {
-      setImportError(error instanceof Error ? error.message : 'Import fehlgeschlagen. Bitte JSON-Format prüfen.')
+      setImportError(error instanceof Error ? error.message : t('Import fehlgeschlagen. Bitte JSON-Format prüfen.', 'Import failed. Please verify JSON format.'))
     }
   }
 
@@ -57,7 +59,7 @@ export function SettingsPage(): JSX.Element {
       await setBackgroundImageFromFile(file)
       event.target.value = ''
     } catch (error) {
-      setBackgroundError(error instanceof Error ? error.message : 'Hintergrundbild konnte nicht gesetzt werden.')
+      setBackgroundError(error instanceof Error ? error.message : t('Hintergrundbild konnte nicht gesetzt werden.', 'Background image could not be set.'))
     }
   }
 
@@ -65,8 +67,8 @@ export function SettingsPage(): JSX.Element {
     <section className="page">
       <header className="page-header">
         <div>
-          <h1>Einstellungen</h1>
-          <p className="muted">Oberfläche, Präferenzen und lokales Backup-Verhalten anpassen.</p>
+          <h1>{t('Einstellungen', 'Settings')}</h1>
+          <p className="muted">{t('Oberfläche, Präferenzen und lokales Backup-Verhalten anpassen.', 'Adjust interface, preferences and local backup behavior.')}</p>
         </div>
         <p className="muted app-version">Version {__APP_VERSION__}</p>
       </header>
@@ -74,20 +76,20 @@ export function SettingsPage(): JSX.Element {
       <div className="two-column">
         <article className="card">
           <header className="section-header">
-            <h2>Darstellung</h2>
+            <h2>{t('Darstellung', 'Appearance')}</h2>
           </header>
           <div className="setting-list">
             <label>
-              Thema
+              {t('Thema', 'Theme')}
               <select value={settings.theme} onChange={(event) => setSettings({ theme: event.target.value as typeof settings.theme })}>
-                <option value="light">Hell</option>
-                <option value="dark">Dunkel</option>
-                <option value="glass">Glas</option>
-                <option value="system">System</option>
+                <option value="light">{t('Hell', 'Light')}</option>
+                <option value="dark">{t('Dunkel', 'Dark')}</option>
+                <option value="glass">{t('Glas', 'Glass')}</option>
+                <option value="system">{t('System', 'System')}</option>
               </select>
             </label>
             <label>
-              Akzentfarbe
+              {t('Akzentfarbe', 'Accent color')}
               <div className="color-row">
                 {accentPresets.map((color) => (
                   <button
@@ -96,7 +98,7 @@ export function SettingsPage(): JSX.Element {
                     className={`color-swatch ${settings.accentColor === color ? 'active' : ''}`}
                     style={{ backgroundColor: color }}
                     onClick={() => setSettings({ accentColor: color })}
-                    aria-label={`Akzentfarbe ${color} auswählen`}
+                    aria-label={t(`Akzentfarbe ${color} auswählen`, `Select accent color ${color}`)}
                   />
                 ))}
                 <input type="color" value={settings.accentColor} onChange={(event) => setSettings({ accentColor: event.target.value })} />
@@ -108,39 +110,39 @@ export function SettingsPage(): JSX.Element {
                 checked={settings.gradientOverlayEnabled}
                 onChange={(event) => setSettings({ gradientOverlayEnabled: event.target.checked })}
               />
-              <span>Gradient-Overlay</span>
+              <span>{t('Gradient-Overlay', 'Gradient overlay')}</span>
             </label>
             <label>
-              Gradient-Farben
+              {t('Gradient-Farben', 'Gradient colors')}
               <div className="color-row">
                 <input
                   type="color"
                   value={settings.gradientColorA}
                   onChange={(event) => setSettings({ gradientColorA: event.target.value })}
-                  aria-label="Gradient-Farbe A"
+                  aria-label={t('Gradient-Farbe A', 'Gradient color A')}
                 />
                 <input
                   type="color"
                   value={settings.gradientColorB}
                   onChange={(event) => setSettings({ gradientColorB: event.target.value })}
-                  aria-label="Gradient-Farbe B"
+                  aria-label={t('Gradient-Farbe B', 'Gradient color B')}
                 />
               </div>
             </label>
             <label>
-              Hintergrundbild
+              {t('Hintergrundbild', 'Background image')}
               <div className="inline-controls">
                 <label className="button button-secondary file-picker">
-                  Bild wählen
+                  {t('Bild wählen', 'Choose image')}
                   <input type="file" accept="image/*" onChange={(event) => void onBackgroundImageSelected(event)} />
                 </label>
                 <button type="button" className="button button-tertiary" onClick={clearBackgroundImage} disabled={!backgroundImageDataUrl}>
-                  Bild entfernen
+                  {t('Bild entfernen', 'Remove image')}
                 </button>
               </div>
             </label>
             {backgroundError ? <p className="error-text">{backgroundError}</p> : null}
-            {backgroundImageDataUrl ? <img className="background-preview" src={backgroundImageDataUrl} alt="Vorschau des gewählten Hintergrundbilds" /> : null}
+            {backgroundImageDataUrl ? <img className="background-preview" src={backgroundImageDataUrl} alt={t('Vorschau des gewählten Hintergrundbilds', 'Preview of selected background image')} /> : null}
             <label className="switch">
               <input
                 type="checkbox"
@@ -148,10 +150,10 @@ export function SettingsPage(): JSX.Element {
                 onChange={(event) => setSettings({ backgroundImageBlurEnabled: event.target.checked })}
                 disabled={!backgroundImageDataUrl}
               />
-              <span>Gewähltes Hintergrundbild weichzeichnen</span>
+              <span>{t('Gewähltes Hintergrundbild weichzeichnen', 'Blur selected background image')}</span>
             </label>
             <label>
-              Stärke der Hintergrund-Weichzeichnung
+              {t('Stärke der Hintergrund-Weichzeichnung', 'Background blur strength')}
               <input
                 type="range"
                 min={0}
@@ -164,22 +166,29 @@ export function SettingsPage(): JSX.Element {
             </label>
             <label className="switch">
               <input type="checkbox" checked={settings.reducedMotion} onChange={(event) => setSettings({ reducedMotion: event.target.checked })} />
-              <span>Reduzierte Animationen</span>
+              <span>{t('Reduzierte Animationen', 'Reduced animations')}</span>
             </label>
           </div>
         </article>
 
         <article className="card">
           <header className="section-header">
-            <h2>Präferenzen</h2>
+            <h2>{t('Präferenzen', 'Preferences')}</h2>
           </header>
           <div className="setting-list">
             <label>
-              Währung
+              {t('Sprache', 'Language')}
+              <select value={settings.language} onChange={(event) => setSettings({ language: event.target.value as typeof settings.language })}>
+                <option value="de">Deutsch</option>
+                <option value="en">English</option>
+              </select>
+            </label>
+            <label>
+              {t('Währung', 'Currency')}
               <input value={settings.currency} onChange={(event) => setSettings({ currency: event.target.value.toUpperCase() })} />
             </label>
             <label>
-              Dezimalstellen
+              {t('Dezimalstellen', 'Decimal places')}
               <input
                 type="number"
                 min={0}
@@ -189,7 +198,7 @@ export function SettingsPage(): JSX.Element {
               />
             </label>
             <label>
-              FoodAffairs-Stundensatz (€/h)
+              {t('FoodAffairs-Stundensatz (€/h)', 'FoodAffairs hourly rate (€/h)')}
               <input
                 type="number"
                 min={0.01}
@@ -202,7 +211,7 @@ export function SettingsPage(): JSX.Element {
               />
             </label>
             <label>
-              Datumsformat
+              {t('Datumsformat', 'Date format')}
               <select value={settings.dateFormat} onChange={(event) => setSettings({ dateFormat: event.target.value as typeof settings.dateFormat })}>
                 <option value="DD.MM.YYYY">DD.MM.YYYY</option>
                 <option value="MM/DD/YYYY">MM/DD/YYYY</option>
@@ -210,10 +219,10 @@ export function SettingsPage(): JSX.Element {
               </select>
             </label>
             <label>
-              Wochenstart
+              {t('Wochenstart', 'Week starts on')}
               <select value={settings.startOfWeek} onChange={(event) => setSettings({ startOfWeek: event.target.value as typeof settings.startOfWeek })}>
-                <option value="monday">Montag</option>
-                <option value="sunday">Sonntag</option>
+                <option value="monday">{t('Montag', 'Monday')}</option>
+                <option value="sunday">{t('Sonntag', 'Sunday')}</option>
               </select>
             </label>
             <label className="switch">
@@ -222,7 +231,7 @@ export function SettingsPage(): JSX.Element {
                 checked={settings.privacyHideAmounts}
                 onChange={(event) => setSettings({ privacyHideAmounts: event.target.checked })}
               />
-              <span>Beträge ausblenden (Privatsphäre-Modus)</span>
+              <span>{t('Beträge ausblenden (Privatsphäre-Modus)', 'Hide amounts (privacy mode)')}</span>
             </label>
           </div>
         </article>
@@ -230,22 +239,22 @@ export function SettingsPage(): JSX.Element {
 
       <article className="card">
         <header className="section-header">
-          <h2>Datenverwaltung</h2>
+          <h2>{t('Datenverwaltung', 'Data management')}</h2>
         </header>
         {importError ? <p className="error-text">{importError}</p> : null}
         <div className="inline-controls">
           <button type="button" className="button button-secondary" onClick={exportJson}>
-            JSON-Backup exportieren
+            {t('JSON-Backup exportieren', 'Export JSON backup')}
           </button>
           <button type="button" className="button button-secondary" onClick={exportCsv}>
-            CSV exportieren
+            {t('CSV exportieren', 'Export CSV')}
           </button>
           <select value={importMode} onChange={(event) => setImportMode(event.target.value as 'replace' | 'merge')}>
-            <option value="replace">Importmodus: Ersetzen</option>
-            <option value="merge">Importmodus: Zusammenführen</option>
+            <option value="replace">{t('Importmodus: Ersetzen', 'Import mode: Replace')}</option>
+            <option value="merge">{t('Importmodus: Zusammenführen', 'Import mode: Merge')}</option>
           </select>
           <label className="button button-primary file-picker">
-            JSON importieren
+            {t('JSON importieren', 'Import JSON')}
             <input type="file" accept="application/json" onChange={(event) => void onImport(event)} />
           </label>
         </div>
@@ -253,5 +262,3 @@ export function SettingsPage(): JSX.Element {
     </section>
   )
 }
-
-

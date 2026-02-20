@@ -1,4 +1,5 @@
-﻿export type ThemeMode = 'light' | 'dark' | 'glass' | 'system'
+export type ThemeMode = 'light' | 'dark' | 'glass' | 'system'
+export type AppLanguage = 'de' | 'en'
 
 export type SubscriptionInterval = 'monthly' | 'yearly' | 'four-weekly' | 'custom-months'
 
@@ -64,6 +65,7 @@ export interface InterestScenario {
 }
 
 export interface Settings {
+  language: AppLanguage
   theme: ThemeMode
   accentColor: string
   gradientOverlayEnabled: boolean

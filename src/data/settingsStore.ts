@@ -5,6 +5,7 @@ const UI_STATE_KEY = 'financify.ui-state'
 const BACKGROUND_IMAGE_KEY = 'financify.background-image'
 
 export const defaultSettings: Settings = {
+  language: 'de',
   theme: 'system',
   accentColor: '#0a84ff',
   gradientOverlayEnabled: true,

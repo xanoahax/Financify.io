@@ -1,4 +1,6 @@
-﻿import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import type { AppLanguage } from '../types/models'
+import { tx } from '../utils/i18n'
 
 export interface PaletteAction {
   id: string
@@ -10,14 +12,15 @@ export interface PaletteAction {
 interface CommandPaletteProps {
   onClose: () => void
   actions: PaletteAction[]
+  language: AppLanguage
 }
 
-export function CommandPalette({ onClose, actions }: CommandPaletteProps): JSX.Element {
+export function CommandPalette({ onClose, actions, language }: CommandPaletteProps): JSX.Element {
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
+  const t = (de: string, en: string) => tx(language, de, en)
   const filtered = useMemo(
-    () =>
-      actions.filter((item) => `${item.label} ${item.description}`.toLowerCase().includes(query.trim().toLowerCase())),
+    () => actions.filter((item) => `${item.label} ${item.description}`.toLowerCase().includes(query.trim().toLowerCase())),
     [actions, query],
   )
   const resolvedActiveIndex = filtered.length === 0 ? -1 : Math.min(Math.max(activeIndex, 0), filtered.length - 1)
@@ -75,15 +78,15 @@ export function CommandPalette({ onClose, actions }: CommandPaletteProps): JSX.E
             setActiveIndex(0)
           }}
           onKeyDown={onInputKeyDown}
-          placeholder="Befehl eingeben..."
-          aria-label="Befehlssuche"
+          placeholder={t('Befehl eingeben...', 'Enter command...')}
+          aria-label={t('Befehlssuche', 'Command search')}
           role="combobox"
           aria-expanded="true"
           aria-controls="command-palette-list"
           aria-activedescendant={resolvedActiveIndex >= 0 ? `palette-item-${filtered[resolvedActiveIndex]?.id}` : undefined}
         />
         <ul id="command-palette-list" role="listbox">
-          {filtered.length === 0 ? <li className="empty-inline">Kein Befehl gefunden.</li> : null}
+          {filtered.length === 0 ? <li className="empty-inline">{t('Kein Befehl gefunden.', 'No command found.')}</li> : null}
           {filtered.map((item, index) => (
             <li key={item.id}>
               <button

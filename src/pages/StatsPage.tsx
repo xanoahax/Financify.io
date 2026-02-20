@@ -1,4 +1,4 @@
-﻿import { useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { BarChart } from '../components/BarChart'
 import { DonutChart } from '../components/DonutChart'
 import { StatCard } from '../components/StatCard'
@@ -6,6 +6,7 @@ import { useAppContext } from '../state/useAppContext'
 import { addDays, formatDateByPattern, monthLabel, parseDate, todayString } from '../utils/date'
 import { formatMoney, toPercent } from '../utils/format'
 import { incomeByMonth, materializeIncomeEntriesForRange, sourceBreakdown, sumIncome } from '../utils/income'
+import { tx } from '../utils/i18n'
 import { categoryBreakdown, monthlyTotal } from '../utils/subscription'
 
 type RangePreset = '30d' | '6m' | '12m' | 'custom'
@@ -33,6 +34,7 @@ export function StatsPage(): JSX.Element {
   const [preset, setPreset] = useState<RangePreset>('12m')
   const [customStart, setCustomStart] = useState(addDays(todayString(), -90))
   const [customEnd, setCustomEnd] = useState(todayString())
+  const t = (de: string, en: string) => tx(settings.language, de, en)
 
   const range = resolveRange(preset, customStart, customEnd)
   const rangeDays = rangeLengthDays(range.start, range.end)
@@ -67,13 +69,13 @@ export function StatsPage(): JSX.Element {
   return (
     <section className="page">
       <header className="page-header">
-        <h1>Statistiken</h1>
+        <h1>{t('Statistiken', 'Statistics')}</h1>
         <div className="page-actions">
           <select value={preset} onChange={(event) => setPreset(event.target.value as RangePreset)}>
-            <option value="30d">Letzte 30 Tage</option>
-            <option value="6m">Letzte 6 Monate</option>
-            <option value="12m">Letzte 12 Monate</option>
-            <option value="custom">Eigener Zeitraum</option>
+            <option value="30d">{t('Letzte 30 Tage', 'Last 30 days')}</option>
+            <option value="6m">{t('Letzte 6 Monate', 'Last 6 months')}</option>
+            <option value="12m">{t('Letzte 12 Monate', 'Last 12 months')}</option>
+            <option value="custom">{t('Eigener Zeitraum', 'Custom range')}</option>
           </select>
           {preset === 'custom' ? (
             <>
@@ -85,43 +87,41 @@ export function StatsPage(): JSX.Element {
       </header>
 
       <p className="muted">
-        Zeitraum: {formatDateByPattern(range.start, settings.dateFormat)} - {formatDateByPattern(range.end, settings.dateFormat)}
+        {t('Zeitraum', 'Range')}: {formatDateByPattern(range.start, settings.dateFormat)} - {formatDateByPattern(range.end, settings.dateFormat)}
       </p>
 
       <div className="stats-grid">
         <StatCard
-          label="Einkommen (gewählter Zeitraum)"
+          label={t('Einkommen (gewählter Zeitraum)', 'Income (selected range)')}
           value={formatMoney(data.incomeTotal, settings.currency, settings.decimals, settings.privacyHideAmounts)}
-          hint={`ggü. Vorzeitraum ${toPercent(data.incomeDelta)}`}
+          hint={`${t('ggü. Vorzeitraum', 'vs previous range')} ${toPercent(data.incomeDelta)}`}
         />
         <StatCard
-          label="Geschaetzte Abo-Ausgaben"
+          label={t('Geschätzte Abo-Ausgaben', 'Estimated subscription expenses')}
           value={formatMoney(data.estimatedSpend, settings.currency, settings.decimals, settings.privacyHideAmounts)}
-          hint={`${formatMoney(data.monthlySpend, settings.currency, settings.decimals, settings.privacyHideAmounts)} pro Monat`}
+          hint={`${formatMoney(data.monthlySpend, settings.currency, settings.decimals, settings.privacyHideAmounts)} ${t('pro Monat', 'per month')}`}
         />
         <StatCard
-          label="Cashflow"
+          label={t('Cashflow', 'Cashflow')}
           value={formatMoney(data.cashflow, settings.currency, settings.decimals, settings.privacyHideAmounts)}
-          hint={`Vorzeitraum: ${formatDateByPattern(data.previousRange.start, settings.dateFormat)} - ${formatDateByPattern(data.previousRange.end, settings.dateFormat)}`}
+          hint={`${t('Vorzeitraum', 'Previous range')}: ${formatDateByPattern(data.previousRange.start, settings.dateFormat)} - ${formatDateByPattern(data.previousRange.end, settings.dateFormat)}`}
         />
       </div>
 
       <div className="three-column">
         <article className="card">
-          <h2>Einkommenstrend</h2>
+          <h2>{t('Einkommenstrend', 'Income trend')}</h2>
           <BarChart data={data.monthlyIncomeSeries} />
         </article>
         <article className="card">
-          <h2>Einkommensquellen</h2>
+          <h2>{t('Einkommensquellen', 'Income sources')}</h2>
           <DonutChart data={data.sourceSeries} />
         </article>
         <article className="card">
-          <h2>Abo-Kategorien</h2>
+          <h2>{t('Abo-Kategorien', 'Subscription categories')}</h2>
           <DonutChart data={data.categorySeries} />
         </article>
       </div>
     </section>
   )
 }
-
-

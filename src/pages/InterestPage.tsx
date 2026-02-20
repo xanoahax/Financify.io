@@ -1,8 +1,9 @@
-﻿import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { LineChart } from '../components/LineChart'
 import { useAppContext } from '../state/useAppContext'
 import type { InterestScenarioInput } from '../types/models'
 import { formatMoney, toPercent } from '../utils/format'
+import { tx } from '../utils/i18n'
 import { calculateInterestScenario } from '../utils/interest'
 
 function buildDefaultScenario(): InterestScenarioInput {
@@ -29,16 +30,14 @@ export function InterestPage(): JSX.Element {
   const [compareB, setCompareB] = useState<string>('')
   const [saveError, setSaveError] = useState('')
   const [confirmDeleteScenario, setConfirmDeleteScenario] = useState<{ id: string; name: string } | null>(null)
+  const t = (de: string, en: string) => tx(settings.language, de, en)
 
   const result = useMemo(() => calculateInterestScenario(input), [input])
   const chartData = result.timeline.map((item) => ({ label: `M${item.month}`, value: item.balance }))
-  const contributionVsInterest = useMemo(
-    () => [
-      { label: 'Einzahlungen', value: result.totalContribution },
-      { label: 'Zinsen', value: result.totalInterest },
-    ],
-    [result.totalContribution, result.totalInterest],
-  )
+  const contributionVsInterest = [
+    { label: t('Einzahlungen', 'Contributions'), value: result.totalContribution },
+    { label: t('Zinsen', 'Interest'), value: result.totalInterest },
+  ]
 
   const compared = useMemo(() => {
     const scenarioA = scenarios.find((item) => item.id === compareA)
@@ -73,7 +72,7 @@ export function InterestPage(): JSX.Element {
       await deleteScenario(confirmDeleteScenario.id)
       setConfirmDeleteScenario(null)
     } catch (error) {
-      setSaveError(error instanceof Error ? error.message : 'Szenario konnte nicht gelöscht werden.')
+      setSaveError(error instanceof Error ? error.message : t('Szenario konnte nicht gelöscht werden.', 'Scenario could not be deleted.'))
       setConfirmDeleteScenario(null)
     }
   }
@@ -81,32 +80,26 @@ export function InterestPage(): JSX.Element {
   return (
     <section className="page">
       <header className="page-header">
-        <h1>Zinsrechner</h1>
-        <p className="muted">Berechne Zinseszins mit optionaler Inflation und Steuerannahmen.</p>
+        <h1>{t('Zinsrechner', 'Interest calculator')}</h1>
+        <p className="muted">{t('Berechne Zinseszins mit optionaler Inflation und Steuerannahmen.', 'Calculate compound interest with optional inflation and tax assumptions.')}</p>
       </header>
 
       <div className="two-column">
         <article className="card">
           <header className="section-header">
-            <h2>Eingaben</h2>
+            <h2>{t('Eingaben', 'Inputs')}</h2>
           </header>
           <form className="form-grid" onSubmit={(event) => event.preventDefault()}>
             <label>
-              Szenarioname
+              {t('Szenarioname', 'Scenario name')}
               <input value={input.name} onChange={(event) => setInput((current) => ({ ...current, name: event.target.value }))} />
             </label>
             <label>
-              Startkapital
-              <input
-                type="number"
-                min={0}
-                step="0.01"
-                value={input.startCapital}
-                onChange={(event) => setInput((current) => ({ ...current, startCapital: Number(event.target.value) }))}
-              />
+              {t('Startkapital', 'Initial capital')}
+              <input type="number" min={0} step="0.01" value={input.startCapital} onChange={(event) => setInput((current) => ({ ...current, startCapital: Number(event.target.value) }))} />
             </label>
             <label>
-              Regelmäßige Einzahlung
+              {t('Regelmäßige Einzahlung', 'Recurring contribution')}
               <input
                 type="number"
                 min={0}
@@ -116,82 +109,51 @@ export function InterestPage(): JSX.Element {
               />
             </label>
             <label>
-              Einzahlungsintervall
+              {t('Einzahlungsintervall', 'Contribution interval')}
               <select
                 value={input.contributionFrequency}
                 onChange={(event) => setInput((current) => ({ ...current, contributionFrequency: event.target.value as InterestScenarioInput['contributionFrequency'] }))}
               >
-                <option value="monthly">Monatlich</option>
-                <option value="yearly">Jährlich</option>
+                <option value="monthly">{t('Monatlich', 'Monthly')}</option>
+                <option value="yearly">{t('Jährlich', 'Yearly')}</option>
               </select>
             </label>
             <label>
-              Zinssatz (p.a.)
-              <input
-                type="number"
-                min={0}
-                max={100}
-                step="0.1"
-                value={input.annualInterestRate}
-                onChange={(event) => setInput((current) => ({ ...current, annualInterestRate: Number(event.target.value) }))}
-              />
+              {t('Zinssatz (p.a.)', 'Interest rate (p.a.)')}
+              <input type="number" min={0} max={100} step="0.1" value={input.annualInterestRate} onChange={(event) => setInput((current) => ({ ...current, annualInterestRate: Number(event.target.value) }))} />
             </label>
             <label>
-              Laufzeit (Monate)
-              <input
-                type="number"
-                min={1}
-                max={600}
-                value={input.durationMonths}
-                onChange={(event) => setInput((current) => ({ ...current, durationMonths: Number(event.target.value) }))}
-              />
+              {t('Laufzeit (Monate)', 'Duration (months)')}
+              <input type="number" min={1} max={600} value={input.durationMonths} onChange={(event) => setInput((current) => ({ ...current, durationMonths: Number(event.target.value) }))} />
             </label>
             <label>
-              Zinsintervall
+              {t('Zinsintervall', 'Interest interval')}
               <select
                 value={input.interestFrequency}
                 onChange={(event) => setInput((current) => ({ ...current, interestFrequency: event.target.value as InterestScenarioInput['interestFrequency'] }))}
               >
-                <option value="monthly">Monatlich</option>
-                <option value="yearly">Jährlich</option>
+                <option value="monthly">{t('Monatlich', 'Monthly')}</option>
+                <option value="yearly">{t('Jährlich', 'Yearly')}</option>
               </select>
             </label>
 
             <label className="switch full-width">
-              <input
-                type="checkbox"
-                checked={input.advancedEnabled}
-                onChange={(event) => setInput((current) => ({ ...current, advancedEnabled: event.target.checked }))}
-              />
-              <span>Erweiterter Modus</span>
+              <input type="checkbox" checked={input.advancedEnabled} onChange={(event) => setInput((current) => ({ ...current, advancedEnabled: event.target.checked }))} />
+              <span>{t('Erweiterter Modus', 'Advanced mode')}</span>
             </label>
 
             {input.advancedEnabled ? (
               <>
                 <label>
-                  Inflationsrate (p.a.)
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    step="0.1"
-                    value={input.annualInflationRate}
-                    onChange={(event) => setInput((current) => ({ ...current, annualInflationRate: Number(event.target.value) }))}
-                  />
+                  {t('Inflationsrate (p.a.)', 'Inflation rate (p.a.)')}
+                  <input type="number" min={0} max={100} step="0.1" value={input.annualInflationRate} onChange={(event) => setInput((current) => ({ ...current, annualInflationRate: Number(event.target.value) }))} />
                 </label>
                 <label>
-                  Kapitalertragssteuer (%)
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    step="0.1"
-                    value={input.gainsTaxRate}
-                    onChange={(event) => setInput((current) => ({ ...current, gainsTaxRate: Number(event.target.value) }))}
-                  />
+                  {t('Kapitalertragssteuer (%)', 'Capital gains tax (%)')}
+                  <input type="number" min={0} max={100} step="0.1" value={input.gainsTaxRate} onChange={(event) => setInput((current) => ({ ...current, gainsTaxRate: Number(event.target.value) }))} />
                 </label>
                 <label>
-                  Erhöhung der Einzahlung p.a.
+                  {t('Erhöhung der Einzahlung p.a.', 'Annual contribution increase')}
                   <input
                     type="number"
                     min={0}
@@ -211,14 +173,14 @@ export function InterestPage(): JSX.Element {
                 onClick={() => {
                   setSaveError('')
                   void addScenario(input).catch((error) => {
-                    setSaveError(error instanceof Error ? error.message : 'Szenario konnte nicht gespeichert werden.')
+                    setSaveError(error instanceof Error ? error.message : t('Szenario konnte nicht gespeichert werden.', 'Scenario could not be saved.'))
                   })
                 }}
               >
-                Szenario speichern
+                {t('Szenario speichern', 'Save scenario')}
               </button>
               <button type="button" className="button button-secondary" onClick={() => setInput(buildDefaultScenario())}>
-                Zurücksetzen
+                {t('Zurücksetzen', 'Reset')}
               </button>
             </div>
           </form>
@@ -226,27 +188,27 @@ export function InterestPage(): JSX.Element {
 
         <article className="card">
           <header className="section-header">
-            <h2>Ergebnisse</h2>
+            <h2>{t('Ergebnisse', 'Results')}</h2>
             <button type="button" className="button button-tertiary" onClick={() => setShowDetails((current) => !current)}>
-              {showDetails ? 'Details ausblenden' : 'Details anzeigen'}
+              {showDetails ? t('Details ausblenden', 'Hide details') : t('Details anzeigen', 'Show details')}
             </button>
           </header>
           <div className="stats-grid compact">
             <div className="stat-tile">
-              <p className="muted">Endsaldo</p>
+              <p className="muted">{t('Endsaldo', 'Final balance')}</p>
               <strong>{formatMoney(result.endBalance, settings.currency, settings.decimals, settings.privacyHideAmounts)}</strong>
             </div>
             <div className="stat-tile">
-              <p className="muted">Gesamte Einzahlungen</p>
+              <p className="muted">{t('Gesamte Einzahlungen', 'Total contributions')}</p>
               <strong>{formatMoney(result.totalContribution, settings.currency, settings.decimals, settings.privacyHideAmounts)}</strong>
             </div>
             <div className="stat-tile">
-              <p className="muted">Gesamte Zinsen</p>
+              <p className="muted">{t('Gesamte Zinsen', 'Total interest')}</p>
               <strong>{formatMoney(result.totalInterest, settings.currency, settings.decimals, settings.privacyHideAmounts)}</strong>
             </div>
             {input.advancedEnabled ? (
               <div className="stat-tile">
-                <p className="muted">Realer Endsaldo</p>
+                <p className="muted">{t('Realer Endsaldo', 'Real final balance')}</p>
                 <strong>{formatMoney(result.realEndBalance ?? 0, settings.currency, settings.decimals, settings.privacyHideAmounts)}</strong>
               </div>
             ) : null}
@@ -265,16 +227,16 @@ export function InterestPage(): JSX.Element {
       {showDetails ? (
         <article className="card">
           <header className="section-header">
-            <h2>Verlaufsdetails</h2>
+            <h2>{t('Verlaufsdetails', 'Timeline details')}</h2>
           </header>
           <div className="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>Monat</th>
-                  <th>Einzahlung</th>
-                  <th>Zinsen</th>
-                  <th>Saldo</th>
+                  <th>{t('Monat', 'Month')}</th>
+                  <th>{t('Einzahlung', 'Contribution')}</th>
+                  <th>{t('Zinsen', 'Interest')}</th>
+                  <th>{t('Saldo', 'Balance')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -294,9 +256,9 @@ export function InterestPage(): JSX.Element {
 
       <article className="card">
         <header className="section-header">
-          <h2>Gespeicherte Szenarien</h2>
+          <h2>{t('Gespeicherte Szenarien', 'Saved scenarios')}</h2>
         </header>
-        {scenarios.length === 0 ? <p className="empty-inline">Speichere dein erstes Szenario, um Optionen zu vergleichen.</p> : null}
+        {scenarios.length === 0 ? <p className="empty-inline">{t('Speichere dein erstes Szenario, um Optionen zu vergleichen.', 'Save your first scenario to compare options.')}</p> : null}
         <ul className="clean-list">
           {scenarios.map((scenario) => {
             const computed = calculateInterestScenario(scenario.input)
@@ -305,17 +267,13 @@ export function InterestPage(): JSX.Element {
                 <div>
                   <strong>{scenario.input.name}</strong>
                   <small>
-                    {toPercent(scenario.input.annualInterestRate)} für {scenario.input.durationMonths} Monate
+                    {toPercent(scenario.input.annualInterestRate)} {t('für', 'for')} {scenario.input.durationMonths} {t('Monate', 'months')}
                   </small>
                 </div>
                 <div className="row-actions">
                   <span>{formatMoney(computed.endBalance, settings.currency, settings.decimals, settings.privacyHideAmounts)}</span>
-                  <button
-                    type="button"
-                    className="button button-danger"
-                    onClick={() => setConfirmDeleteScenario({ id: scenario.id, name: scenario.input.name })}
-                  >
-                    Löschen
+                  <button type="button" className="button button-danger" onClick={() => setConfirmDeleteScenario({ id: scenario.id, name: scenario.input.name })}>
+                    {t('Löschen', 'Delete')}
                   </button>
                 </div>
               </li>
@@ -328,18 +286,18 @@ export function InterestPage(): JSX.Element {
         <div className="form-modal-backdrop" onClick={() => setConfirmDeleteScenario(null)} role="presentation">
           <article className="card form-modal confirm-modal" onClick={(event) => event.stopPropagation()}>
             <header className="section-header">
-              <h2>Szenario löschen?</h2>
-              <button type="button" className="icon-button" onClick={() => setConfirmDeleteScenario(null)} aria-label="Popup schließen">
+              <h2>{t('Szenario löschen?', 'Delete scenario?')}</h2>
+              <button type="button" className="icon-button" onClick={() => setConfirmDeleteScenario(null)} aria-label={t('Popup schließen', 'Close popup')}>
                 x
               </button>
             </header>
-            <p>Möchtest du "{confirmDeleteScenario.name}" wirklich löschen?</p>
+            <p>{t(`Möchtest du "${confirmDeleteScenario.name}" wirklich löschen?`, `Do you really want to delete "${confirmDeleteScenario.name}"?`)}</p>
             <div className="form-actions">
               <button type="button" className="button button-danger" onClick={() => void handleDeleteScenarioConfirmed()}>
-                Löschen
+                {t('Löschen', 'Delete')}
               </button>
               <button type="button" className="button button-secondary" onClick={() => setConfirmDeleteScenario(null)}>
-                Abbrechen
+                {t('Abbrechen', 'Cancel')}
               </button>
             </div>
           </article>
@@ -348,11 +306,11 @@ export function InterestPage(): JSX.Element {
 
       <article className="card">
         <header className="section-header">
-          <h2>Szenariovergleich</h2>
+          <h2>{t('Szenariovergleich', 'Scenario comparison')}</h2>
         </header>
         <div className="inline-controls">
           <select value={compareA} onChange={(event) => setCompareA(event.target.value)}>
-            <option value="">Szenario A wählen</option>
+            <option value="">{t('Szenario A wählen', 'Select scenario A')}</option>
             {scenarios.map((scenario) => (
               <option key={`a-${scenario.id}`} value={scenario.id}>
                 {scenario.input.name}
@@ -360,7 +318,7 @@ export function InterestPage(): JSX.Element {
             ))}
           </select>
           <select value={compareB} onChange={(event) => setCompareB(event.target.value)}>
-            <option value="">Szenario B wählen</option>
+            <option value="">{t('Szenario B wählen', 'Select scenario B')}</option>
             {scenarios.map((scenario) => (
               <option key={`b-${scenario.id}`} value={scenario.id}>
                 {scenario.input.name}
@@ -380,10 +338,9 @@ export function InterestPage(): JSX.Element {
             </article>
           </div>
         ) : (
-          <p className="empty-inline">Waehle zwei Szenarien, um die Ergebnisse zu vergleichen.</p>
+          <p className="empty-inline">{t('Wähle zwei Szenarien, um die Ergebnisse zu vergleichen.', 'Choose two scenarios to compare results.')}</p>
         )}
       </article>
     </section>
   )
 }
-

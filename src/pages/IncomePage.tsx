@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { BarChart } from '../components/BarChart'
 import { DonutChart } from '../components/DonutChart'
@@ -6,8 +6,9 @@ import { LineChart } from '../components/LineChart'
 import { useAppContext } from '../state/useAppContext'
 import type { IncomeEntry } from '../types/models'
 import { addDays, endOfMonth, endOfYear, formatDateByPattern, monthLabel, monthKey, startOfMonth, startOfYear, todayString } from '../utils/date'
-import { incomeByMonth, materializeIncomeEntriesForRange, monthOverMonthChange, monthStats, sourceBreakdown, sumIncome } from '../utils/income'
 import { formatMoney, toPercent } from '../utils/format'
+import { incomeByMonth, materializeIncomeEntriesForRange, monthOverMonthChange, monthStats, sourceBreakdown, sumIncome } from '../utils/income'
+import { tx } from '../utils/i18n'
 import { calculateShiftIncome } from '../utils/shiftIncome'
 
 type IncomeFormState = Omit<IncomeEntry, 'id' | 'createdAt' | 'updatedAt'>
@@ -27,11 +28,31 @@ interface IncomeDeleteConfirmState {
 
 const FOOD_AFFAIRS_SOURCE = 'FoodAffairs'
 
-function buildDefaultForm(): IncomeFormState {
+function parseTags(input: string): string[] {
+  return input
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0)
+}
+
+function parseOptionalNumberInput(value: string): number {
+  return value.trim() === '' ? Number.NaN : Number(value)
+}
+
+function formatDurationHours(hours: number, language: 'de' | 'en'): string {
+  const rounded = Math.round(hours * 100) / 100
+  if (Number.isInteger(rounded)) {
+    return `${rounded.toFixed(0)} ${tx(language, 'h', 'h')}`
+  }
+  const numeric = language === 'de' ? rounded.toFixed(2).replace('.', ',') : rounded.toFixed(2)
+  return `${numeric} ${tx(language, 'h', 'h')}`
+}
+
+function buildDefaultForm(sourceDefault: string): IncomeFormState {
   return {
     amount: Number.NaN,
     date: todayString(),
-    source: 'Gehalt',
+    source: sourceDefault,
     tags: [],
     notes: '',
     recurring: 'none',
@@ -47,26 +68,10 @@ function buildDefaultShiftForm(): ShiftLogFormState {
   }
 }
 
-function parseTags(input: string): string[] {
-  return input
-    .split(',')
-    .map((item) => item.trim())
-    .filter((item) => item.length > 0)
-}
-
-function parseOptionalNumberInput(value: string): number {
-  return value.trim() === '' ? Number.NaN : Number(value)
-}
-
-function formatDurationHours(hours: number): string {
-  const rounded = Math.round(hours * 100) / 100
-  return Number.isInteger(rounded) ? `${rounded.toFixed(0)} h` : `${rounded.toFixed(2).replace('.', ',')} h`
-}
-
 export function IncomePage(): JSX.Element {
   const { incomeEntries, settings, uiState, setUiState, addIncomeEntry, updateIncomeEntry, deleteIncomeEntry } = useAppContext()
   const [searchParams, setSearchParams] = useSearchParams()
-  const [form, setForm] = useState<IncomeFormState>(buildDefaultForm())
+  const [form, setForm] = useState<IncomeFormState>(() => buildDefaultForm(tx(settings.language, 'Gehalt', 'Salary')))
   const [formMode, setFormMode] = useState<IncomeFormMode>('manual')
   const [shiftForm, setShiftForm] = useState<ShiftLogFormState>(buildDefaultShiftForm())
   const [editId, setEditId] = useState<string | null>(null)
@@ -79,16 +84,17 @@ export function IncomePage(): JSX.Element {
   const amountInputRef = useRef<HTMLInputElement | null>(null)
   const dateInputRef = useRef<HTMLInputElement | null>(null)
   const shiftDateInputRef = useRef<HTMLInputElement | null>(null)
+  const t = (de: string, en: string) => tx(settings.language, de, en)
 
-  function closeForm(): void {
+  const closeForm = useCallback((): void => {
     setIsFormOpen(false)
     setEditId(null)
     setFormMode('manual')
-    setForm(buildDefaultForm())
+    setForm(buildDefaultForm(tx(settings.language, 'Gehalt', 'Salary')))
     setShiftForm(buildDefaultShiftForm())
     setTagInput('')
     setFormError('')
-  }
+  }, [settings.language])
 
   useEffect(() => {
     if (searchParams.get('quickAdd') !== '1') {
@@ -98,7 +104,7 @@ export function IncomePage(): JSX.Element {
       setIsFormOpen(true)
       setEditId(null)
       setFormMode('manual')
-      setForm(buildDefaultForm())
+      setForm(buildDefaultForm(tx(settings.language, 'Gehalt', 'Salary')))
       setShiftForm(buildDefaultShiftForm())
       setTagInput('')
       setFormError('')
@@ -108,7 +114,7 @@ export function IncomePage(): JSX.Element {
       setSearchParams(nextParams, { replace: true })
     })
     return () => window.cancelAnimationFrame(frame)
-  }, [searchParams, setSearchParams])
+  }, [searchParams, setSearchParams, settings.language])
 
   useEffect(() => {
     if (!isFormOpen && !confirmDelete) {
@@ -126,7 +132,7 @@ export function IncomePage(): JSX.Element {
     }
     window.addEventListener('keydown', onEscape)
     return () => window.removeEventListener('keydown', onEscape)
-  }, [confirmDelete, isFormOpen])
+  }, [confirmDelete, isFormOpen, closeForm])
 
   const today = todayString()
   const currentMonth = monthKey(today)
@@ -217,8 +223,11 @@ export function IncomePage(): JSX.Element {
           amount: result.amount,
           date: shiftForm.date,
           source: FOOD_AFFAIRS_SOURCE,
-          tags: ['FoodAffairs', 'Dienst'],
-          notes: `Dienst ${shiftForm.startTime}-${shiftForm.endTime}${result.crossesMidnight ? ' (über Mitternacht)' : ''}`,
+          tags: ['FoodAffairs', t('Dienst', 'Shift')],
+          notes: t(
+            `Dienst ${shiftForm.startTime}-${shiftForm.endTime}${result.crossesMidnight ? ' (über Mitternacht)' : ''}`,
+            `Shift ${shiftForm.startTime}-${shiftForm.endTime}${result.crossesMidnight ? ' (overnight)' : ''}`,
+          ),
           recurring: 'none',
           recurringIntervalDays: undefined,
         })
@@ -239,7 +248,7 @@ export function IncomePage(): JSX.Element {
       }
       closeForm()
     } catch (error) {
-      setFormError(error instanceof Error ? error.message : 'Einkommenseintrag konnte nicht gespeichert werden.')
+      setFormError(error instanceof Error ? error.message : t('Einkommenseintrag konnte nicht gespeichert werden.', 'Income entry could not be saved.'))
     }
   }
 
@@ -266,7 +275,7 @@ export function IncomePage(): JSX.Element {
     setIsFormOpen(true)
     setEditId(null)
     setFormMode(nextMode)
-    setForm(buildDefaultForm())
+    setForm(buildDefaultForm(t('Gehalt', 'Salary')))
     setShiftForm(buildDefaultShiftForm())
     setTagInput('')
     setFormError('')
@@ -291,7 +300,7 @@ export function IncomePage(): JSX.Element {
       await deleteIncomeEntry(confirmDelete.id)
       setConfirmDelete(null)
     } catch (error) {
-      setFormError(error instanceof Error ? error.message : 'Einkommenseintrag konnte nicht gelöscht werden.')
+      setFormError(error instanceof Error ? error.message : t('Einkommenseintrag konnte nicht gelöscht werden.', 'Income entry could not be deleted.'))
       setConfirmDelete(null)
     }
   }
@@ -300,55 +309,55 @@ export function IncomePage(): JSX.Element {
     <section className="page">
       <header className="page-header">
         <div className="page-title-actions">
-          <h1>Einkommen</h1>
+          <h1>{t('Einkommen', 'Income')}</h1>
           <button type="button" className="button button-primary" onClick={() => openAddForm('manual')}>
-            Einkommen hinzufügen
+            {t('Einkommen hinzufügen', 'Add income')}
           </button>
           <button type="button" className="button button-secondary" onClick={() => openAddForm('foodaffairs-shift')}>
-            FoodAffairs-Dienst loggen
+            {t('FoodAffairs-Dienst loggen', 'Log FoodAffairs shift')}
           </button>
         </div>
         <div className="page-actions">
           <div className="segmented">
             <button type="button" className={viewMode === 'month' ? 'active' : ''} onClick={() => setViewMode('month')}>
-              Monat
+              {t('Monat', 'Month')}
             </button>
             <button type="button" className={viewMode === 'year' ? 'active' : ''} onClick={() => setViewMode('year')}>
-              Jahr
+              {t('Jahr', 'Year')}
             </button>
           </div>
           <input
             value={uiState.globalSearch}
             onChange={(event) => setUiState({ globalSearch: event.target.value })}
-            placeholder="Einkommen suchen..."
-            aria-label="Einkommen suchen"
+            placeholder={t('Einkommen suchen...', 'Search income...')}
+            aria-label={t('Einkommen suchen', 'Search income')}
           />
         </div>
       </header>
 
       <div className="stats-grid">
         <article className="card stat-card">
-          <p className="muted">Einkommen gesamt ({viewMode === 'month' ? 'Monat' : 'Jahr'})</p>
+          <p className="muted">{t('Einkommen gesamt', 'Total income')} ({viewMode === 'month' ? t('Monat', 'month') : t('Jahr', 'year')})</p>
           <p className="stat-value">{formatMoney(stats.total, settings.currency, settings.decimals, settings.privacyHideAmounts)}</p>
-          <p className="hint">Enthält wiederkehrende Einträge im gewählten Zeitraum.</p>
+          <p className="hint">{t('Enthält wiederkehrende Einträge im gewählten Zeitraum.', 'Includes recurring entries in the selected period.')}</p>
         </article>
         <article className="card stat-card">
-          <p className="muted">Monatlicher Durchschnitt</p>
+          <p className="muted">{t('Monatlicher Durchschnitt', 'Monthly average')}</p>
           <p className="stat-value">{formatMoney(stats.aggregates.average, settings.currency, settings.decimals, settings.privacyHideAmounts)}</p>
         </article>
         <article className="card stat-card">
-          <p className="muted">Monatlicher Median</p>
+          <p className="muted">{t('Monatlicher Median', 'Monthly median')}</p>
           <p className="stat-value">{formatMoney(stats.aggregates.median, settings.currency, settings.decimals, settings.privacyHideAmounts)}</p>
-          <p className="hint">Vgl. Vormonat: {toPercent(stats.mom)}</p>
+          <p className="hint">{t('Vgl. Vormonat', 'vs previous month')}: {toPercent(stats.mom)}</p>
         </article>
       </div>
 
       <div className="two-column two-column-equal">
         <article className="card">
           <header className="section-header">
-            <h2>Quellenaufteilung</h2>
+            <h2>{t('Quellenaufteilung', 'Source breakdown')}</h2>
             <select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)}>
-              <option value="all">Alle Quellen</option>
+              <option value="all">{t('Alle Quellen', 'All sources')}</option>
               {sources.map((source) => (
                 <option value={source} key={source}>
                   {source}
@@ -360,7 +369,7 @@ export function IncomePage(): JSX.Element {
         </article>
         <article className="card">
           <header className="section-header">
-            <h2>Trend (12 Monate)</h2>
+            <h2>{t('Trend (12 Monate)', 'Trend (12 months)')}</h2>
           </header>
           <LineChart data={stats.monthSeries} />
         </article>
@@ -371,14 +380,14 @@ export function IncomePage(): JSX.Element {
           <article className="card form-modal" onClick={(event) => event.stopPropagation()}>
             <header className="section-header">
               <h2>
-                {editId ? 'Einkommen bearbeiten' : formMode === 'foodaffairs-shift' ? 'FoodAffairs-Dienst loggen' : 'Einkommen hinzufügen'}
+                {editId ? t('Einkommen bearbeiten', 'Edit income') : formMode === 'foodaffairs-shift' ? t('FoodAffairs-Dienst loggen', 'Log FoodAffairs shift') : t('Einkommen hinzufügen', 'Add income')}
               </h2>
-              <button type="button" className="icon-button" onClick={closeForm} aria-label="Popup schließen">
+              <button type="button" className="icon-button" onClick={closeForm} aria-label={t('Popup schließen', 'Close popup')}>
                 x
               </button>
             </header>
             {!editId ? (
-              <div className="segmented" role="tablist" aria-label="Einkommen-Eingabeoption">
+              <div className="segmented" role="tablist" aria-label={t('Einkommen-Eingabeoption', 'Income input mode')}>
                 <button
                   type="button"
                   className={formMode === 'manual' ? 'active' : ''}
@@ -388,7 +397,7 @@ export function IncomePage(): JSX.Element {
                     window.requestAnimationFrame(() => amountInputRef.current?.focus())
                   }}
                 >
-                  Manuell
+                  {t('Manuell', 'Manual')}
                 </button>
                 <button
                   type="button"
@@ -399,7 +408,7 @@ export function IncomePage(): JSX.Element {
                     window.requestAnimationFrame(() => shiftDateInputRef.current?.focus())
                   }}
                 >
-                  FoodAffairs-Dienst
+                  {t('FoodAffairs-Dienst', 'FoodAffairs shift')}
                 </button>
               </div>
             ) : null}
@@ -408,54 +417,38 @@ export function IncomePage(): JSX.Element {
               {!editId && formMode === 'foodaffairs-shift' ? (
                 <>
                   <label>
-                    Datum
-                    <input
-                      ref={shiftDateInputRef}
-                      type="date"
-                      value={shiftForm.date}
-                      onChange={(event) => setShiftForm((current) => ({ ...current, date: event.target.value }))}
-                      required
-                    />
+                    {t('Datum', 'Date')}
+                    <input ref={shiftDateInputRef} type="date" value={shiftForm.date} onChange={(event) => setShiftForm((current) => ({ ...current, date: event.target.value }))} required />
                   </label>
                   <label>
-                    Quelle
+                    {t('Quelle', 'Source')}
                     <input value={FOOD_AFFAIRS_SOURCE} readOnly aria-readonly="true" />
                   </label>
                   <label>
-                    Start
-                    <input
-                      type="time"
-                      value={shiftForm.startTime}
-                      onChange={(event) => setShiftForm((current) => ({ ...current, startTime: event.target.value }))}
-                      required
-                    />
+                    {t('Start', 'Start')}
+                    <input type="time" value={shiftForm.startTime} onChange={(event) => setShiftForm((current) => ({ ...current, startTime: event.target.value }))} required />
                   </label>
                   <label>
-                    Ende
-                    <input
-                      type="time"
-                      value={shiftForm.endTime}
-                      onChange={(event) => setShiftForm((current) => ({ ...current, endTime: event.target.value }))}
-                      required
-                    />
+                    {t('Ende', 'End')}
+                    <input type="time" value={shiftForm.endTime} onChange={(event) => setShiftForm((current) => ({ ...current, endTime: event.target.value }))} required />
                   </label>
                   <div className="stat-tile full-width">
-                    <small className="muted">Stundensatz: {foodAffairsHourlyRate} €/h</small>
+                    <small className="muted">{t('Stundensatz', 'Hourly rate')}: {foodAffairsHourlyRate} €/h</small>
                     <strong>
-                      Berechnetes Einkommen:{' '}
+                      {t('Berechnetes Einkommen', 'Calculated income')}:{' '}
                       {shiftPreview ? formatMoney(shiftPreview.amount, settings.currency, settings.decimals, settings.privacyHideAmounts) : '—'}
                     </strong>
                     <small className="muted">
                       {shiftPreview
-                        ? `Dauer: ${formatDurationHours(shiftPreview.durationHours)}${shiftPreview.crossesMidnight ? ' (über Mitternacht)' : ''}`
-                        : 'Bitte gültige Start- und Endzeit eingeben.'}
+                        ? `${t('Dauer', 'Duration')}: ${formatDurationHours(shiftPreview.durationHours, settings.language)}${shiftPreview.crossesMidnight ? t(' (über Mitternacht)', ' (overnight)') : ''}`
+                        : t('Bitte gültige Start- und Endzeit eingeben.', 'Please enter valid start and end times.')}
                     </small>
                   </div>
                 </>
               ) : (
                 <>
                   <label>
-                    Betrag
+                    {t('Betrag', 'Amount')}
                     <input
                       ref={amountInputRef}
                       type="number"
@@ -467,48 +460,34 @@ export function IncomePage(): JSX.Element {
                     />
                   </label>
                   <label>
-                    Datum
-                    <input
-                      ref={dateInputRef}
-                      type="date"
-                      value={form.date}
-                      onChange={(event) => setForm((current) => ({ ...current, date: event.target.value }))}
-                      required
-                    />
+                    {t('Datum', 'Date')}
+                    <input ref={dateInputRef} type="date" value={form.date} onChange={(event) => setForm((current) => ({ ...current, date: event.target.value }))} required />
                   </label>
                   <label>
-                    Quelle
+                    {t('Quelle', 'Source')}
                     <input value={form.source} onChange={(event) => setForm((current) => ({ ...current, source: event.target.value }))} required />
                   </label>
                   <label>
-                    Wiederkehrend
-                    <select
-                      value={form.recurring}
-                      onChange={(event) => setForm((current) => ({ ...current, recurring: event.target.value as IncomeEntry['recurring'] }))}
-                    >
-                      <option value="none">Nein</option>
-                      <option value="weekly">Wöchentlich</option>
-                      <option value="monthly">Monatlich</option>
-                      <option value="custom">Eigene Tage</option>
+                    {t('Wiederkehrend', 'Recurring')}
+                    <select value={form.recurring} onChange={(event) => setForm((current) => ({ ...current, recurring: event.target.value as IncomeEntry['recurring'] }))}>
+                      <option value="none">{t('Nein', 'No')}</option>
+                      <option value="weekly">{t('Wöchentlich', 'Weekly')}</option>
+                      <option value="monthly">{t('Monatlich', 'Monthly')}</option>
+                      <option value="custom">{t('Eigene Tage', 'Custom days')}</option>
                     </select>
                   </label>
                   {form.recurring === 'custom' ? (
                     <label>
-                      Alle X Tage
-                      <input
-                        type="number"
-                        min={1}
-                        value={form.recurringIntervalDays ?? 30}
-                        onChange={(event) => setForm((current) => ({ ...current, recurringIntervalDays: Number(event.target.value) }))}
-                      />
+                      {t('Alle X Tage', 'Every X days')}
+                      <input type="number" min={1} value={form.recurringIntervalDays ?? 30} onChange={(event) => setForm((current) => ({ ...current, recurringIntervalDays: Number(event.target.value) }))} />
                     </label>
                   ) : null}
                   <label>
-                    Tags (kommagetrennt)
+                    {t('Tags (kommagetrennt)', 'Tags (comma-separated)')}
                     <input value={tagInput} onChange={(event) => setTagInput(event.target.value)} />
                   </label>
                   <label className="full-width">
-                    Notizen
+                    {t('Notizen', 'Notes')}
                     <textarea value={form.notes} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))} />
                   </label>
                 </>
@@ -516,10 +495,10 @@ export function IncomePage(): JSX.Element {
 
               <div className="form-actions full-width">
                 <button type="submit" className="button button-primary">
-                  {editId ? 'Aktualisieren' : formMode === 'foodaffairs-shift' ? 'Dienst speichern' : 'Speichern'}
+                  {editId ? t('Aktualisieren', 'Update') : formMode === 'foodaffairs-shift' ? t('Dienst speichern', 'Save shift') : t('Speichern', 'Save')}
                 </button>
                 <button type="button" className="button button-secondary" onClick={closeForm}>
-                  Abbrechen
+                  {t('Abbrechen', 'Cancel')}
                 </button>
               </div>
             </form>
@@ -531,20 +510,21 @@ export function IncomePage(): JSX.Element {
         <div className="form-modal-backdrop" onClick={() => setConfirmDelete(null)} role="presentation">
           <article className="card form-modal confirm-modal" onClick={(event) => event.stopPropagation()}>
             <header className="section-header">
-              <h2>Einkommenseintrag löschen?</h2>
-              <button type="button" className="icon-button" onClick={() => setConfirmDelete(null)} aria-label="Popup schließen">
+              <h2>{t('Einkommenseintrag löschen?', 'Delete income entry?')}</h2>
+              <button type="button" className="icon-button" onClick={() => setConfirmDelete(null)} aria-label={t('Popup schließen', 'Close popup')}>
                 x
               </button>
             </header>
             <p>
-              Möchtest du den Eintrag "{confirmDelete.source}" vom {formatDateByPattern(confirmDelete.date, settings.dateFormat)} wirklich löschen?
+              {t('Möchtest du den Eintrag', 'Do you really want to delete the entry')} "{confirmDelete.source}" {t('vom', 'from')}{' '}
+              {formatDateByPattern(confirmDelete.date, settings.dateFormat)} {t('wirklich löschen?', '?')}
             </p>
             <div className="form-actions">
               <button type="button" className="button button-danger" onClick={() => void handleDeleteConfirmed()}>
-                Löschen
+                {t('Löschen', 'Delete')}
               </button>
               <button type="button" className="button button-secondary" onClick={() => setConfirmDelete(null)}>
-                Abbrechen
+                {t('Abbrechen', 'Cancel')}
               </button>
             </div>
           </article>
@@ -553,24 +533,24 @@ export function IncomePage(): JSX.Element {
 
       <article className="card">
         <header className="section-header">
-          <h2>Einkommen pro Monat</h2>
+          <h2>{t('Einkommen pro Monat', 'Income per month')}</h2>
         </header>
         <BarChart data={stats.monthSeries} />
       </article>
 
       <article className="card">
         <header className="section-header">
-          <h2>Einträge</h2>
+          <h2>{t('Einträge', 'Entries')}</h2>
         </header>
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Datum</th>
-                <th>Quelle</th>
-                <th>Betrag</th>
-                <th>Tags</th>
-                <th>Aktionen</th>
+                <th>{t('Datum', 'Date')}</th>
+                <th>{t('Quelle', 'Source')}</th>
+                <th>{t('Betrag', 'Amount')}</th>
+                <th>{t('Tags', 'Tags')}</th>
+                <th>{t('Aktionen', 'Actions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -583,10 +563,10 @@ export function IncomePage(): JSX.Element {
                   <td>
                     <div className="row-actions">
                       <button type="button" className="button button-tertiary" onClick={() => startEdit(item)}>
-                        Bearbeiten
+                        {t('Bearbeiten', 'Edit')}
                       </button>
                       <button type="button" className="button button-danger" onClick={() => openDeleteConfirmation(item)}>
-                        Löschen
+                        {t('Löschen', 'Delete')}
                       </button>
                     </div>
                   </td>
@@ -594,11 +574,9 @@ export function IncomePage(): JSX.Element {
               ))}
             </tbody>
           </table>
-          {tableEntries.length === 0 ? <p className="empty-inline">Keine Einkommenseinträge für die ausgewählte Ansicht.</p> : null}
+          {tableEntries.length === 0 ? <p className="empty-inline">{t('Keine Einkommenseinträge für die ausgewählte Ansicht.', 'No income entries for the selected view.')}</p> : null}
         </div>
       </article>
     </section>
   )
 }
-
-

@@ -1,11 +1,15 @@
-﻿import type { ToastMessage } from '../types/models'
+import type { AppLanguage, ToastMessage } from '../types/models'
+import { tx } from '../utils/i18n'
 
 interface ToastHostProps {
   toasts: ToastMessage[]
   onDismiss: (id: string) => void
+  language: AppLanguage
 }
 
-export function ToastHost({ toasts, onDismiss }: ToastHostProps): JSX.Element {
+export function ToastHost({ toasts, onDismiss, language }: ToastHostProps): JSX.Element {
+  const t = (de: string, en: string) => tx(language, de, en)
+
   return (
     <div className="toast-host" aria-live="polite">
       {toasts.map((toast) => (
@@ -24,7 +28,12 @@ export function ToastHost({ toasts, onDismiss }: ToastHostProps): JSX.Element {
                 {toast.actionLabel}
               </button>
             ) : null}
-            <button type="button" className="icon-button" onClick={() => onDismiss(toast.id)} aria-label="Benachrichtigung schließen">
+            <button
+              type="button"
+              className="icon-button"
+              onClick={() => onDismiss(toast.id)}
+              aria-label={t('Benachrichtigung schließen', 'Close notification')}
+            >
               x
             </button>
           </div>
@@ -33,4 +42,3 @@ export function ToastHost({ toasts, onDismiss }: ToastHostProps): JSX.Element {
     </div>
   )
 }
-
