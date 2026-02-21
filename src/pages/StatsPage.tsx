@@ -3,6 +3,7 @@ import { BarChart } from '../components/BarChart'
 import { DonutChart } from '../components/DonutChart'
 import { StatCard } from '../components/StatCard'
 import { useAppContext } from '../state/useAppContext'
+import type { IncomeEntry } from '../types/models'
 import { addDays, formatDateByPattern, monthLabel, parseDate, todayString } from '../utils/date'
 import { formatMoney, toPercent } from '../utils/format'
 import { incomeByMonth, materializeIncomeEntriesForRange, sourceBreakdown, sumIncome } from '../utils/income'
@@ -27,6 +28,18 @@ function resolveRange(preset: RangePreset, customStart: string, customEnd: strin
 
 function rangeLengthDays(start: string, end: string): number {
   return Math.max(1, Math.round((parseDate(end).getTime() - parseDate(start).getTime()) / (1000 * 60 * 60 * 24)))
+}
+
+function isJobShiftIncomeEntry(entry: IncomeEntry): boolean {
+  const tags = entry.tags.map((tag) => tag.trim().toLowerCase())
+  return tags.includes('dienst') || tags.includes('shift')
+}
+
+function incomeSourceLabel(entry: IncomeEntry, language: 'de' | 'en'): string {
+  if (!isJobShiftIncomeEntry(entry)) {
+    return entry.source
+  }
+  return `${tx(language, 'Job', 'Job')}: ${entry.source}`
 }
 
 export function StatsPage(): JSX.Element {
@@ -61,11 +74,11 @@ export function StatsPage(): JSX.Element {
       cashflow: incomeTotal - estimatedSpend,
       incomeDelta,
       monthlyIncomeSeries: incomeByMonth(incomeInRange).map((item) => ({ label: monthLabel(item.month, monthLocale), value: item.value })),
-      sourceSeries: sourceBreakdown(incomeInRange),
+      sourceSeries: sourceBreakdown(incomeInRange, (entry) => incomeSourceLabel(entry, settings.language)),
       categorySeries: categoryBreakdown(activeSubscriptions),
       previousRange: { start: previousStart, end: previousEnd },
     }
-  }, [incomeEntries, monthLocale, range.end, range.start, rangeDays, subscriptions])
+  }, [incomeEntries, monthLocale, range.end, range.start, rangeDays, settings.language, subscriptions])
 
   return (
     <section className="page">

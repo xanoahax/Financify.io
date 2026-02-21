@@ -38,6 +38,18 @@ function parseOptionalNumberInput(value: string): number {
   return value.trim() === '' ? Number.NaN : Number(value)
 }
 
+function isJobShiftIncomeEntry(entry: IncomeEntry): boolean {
+  const tags = entry.tags.map((tag) => tag.trim().toLowerCase())
+  return tags.includes('dienst') || tags.includes('shift')
+}
+
+function incomeSourceLabel(entry: IncomeEntry, language: 'de' | 'en'): string {
+  if (!isJobShiftIncomeEntry(entry)) {
+    return entry.source
+  }
+  return `${tx(language, 'Job', 'Job')}: ${entry.source}`
+}
+
 function formatDurationHours(hours: number, language: 'de' | 'en'): string {
   const rounded = Math.round(hours * 100) / 100
   if (Number.isInteger(rounded)) {
@@ -145,20 +157,27 @@ export function IncomePage(): JSX.Element {
   const today = todayString()
   const currentMonth = monthKey(today)
   const currentYear = today.slice(0, 4)
-  const sources = useMemo(() => [...new Set(incomeEntries.map((item) => item.source))], [incomeEntries])
+  const sources = useMemo(
+    () => [...new Set(incomeEntries.map((item) => incomeSourceLabel(item, settings.language)))],
+    [incomeEntries, settings.language],
+  )
 
   const sourceAndQueryFiltered = useMemo(() => {
     const query = uiState.globalSearch.trim().toLowerCase()
     return incomeEntries
-      .filter((item) => (sourceFilter === 'all' ? true : item.source === sourceFilter))
+      .filter((item) => {
+        const sourceLabel = incomeSourceLabel(item, settings.language)
+        return sourceFilter === 'all' ? true : sourceLabel === sourceFilter
+      })
       .filter((item) => {
         if (!query) {
           return true
         }
-        const text = `${item.source} ${item.notes} ${item.tags.join(' ')}`.toLowerCase()
+        const sourceLabel = incomeSourceLabel(item, settings.language)
+        const text = `${sourceLabel} ${item.source} ${item.notes} ${item.tags.join(' ')}`.toLowerCase()
         return text.includes(query)
       })
-  }, [incomeEntries, sourceFilter, uiState.globalSearch])
+  }, [incomeEntries, settings.language, sourceFilter, uiState.globalSearch])
 
   const periodRange = useMemo(
     () =>
@@ -189,11 +208,11 @@ export function IncomePage(): JSX.Element {
     return {
       total: sumIncome(resolvedPeriodEntries),
       monthSeries: monthly.map((item) => ({ label: monthLabel(item.month, monthLocale), value: item.value })).slice(-12),
-      sourceSeries: sourceBreakdown(resolvedPeriodEntries),
+      sourceSeries: sourceBreakdown(resolvedPeriodEntries, (entry) => incomeSourceLabel(entry, settings.language)),
       aggregates: monthStats(rollingYearEntries),
       mom: monthOverMonthChange(rollingYearEntries),
     }
-  }, [monthLocale, resolvedPeriodEntries, rollingYearEntries])
+  }, [monthLocale, resolvedPeriodEntries, rollingYearEntries, settings.language])
 
   const shiftHourlyRate = useMemo(() => {
     const rate = Number(selectedShiftJob?.hourlyRate)
@@ -302,7 +321,7 @@ export function IncomePage(): JSX.Element {
   }
 
   function openDeleteConfirmation(item: IncomeEntry): void {
-    setConfirmDelete({ id: item.id, source: item.source, date: item.date })
+    setConfirmDelete({ id: item.id, source: incomeSourceLabel(item, settings.language), date: item.date })
   }
 
   async function handleDeleteConfirmed(): Promise<void> {
@@ -591,7 +610,7 @@ export function IncomePage(): JSX.Element {
               {tableEntries.map((item) => (
                 <tr key={item.id}>
                   <td>{formatDateByPattern(item.date, settings.dateFormat)}</td>
-                  <td>{item.source}</td>
+                  <td>{incomeSourceLabel(item, settings.language)}</td>
                   <td>{formatMoney(item.amount, settings.currency, settings.privacyHideAmounts)}</td>
                   <td>{item.tags.join(', ') || '-'}</td>
                   <td>

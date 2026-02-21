@@ -17,10 +17,14 @@ export function incomeByMonth(entries: IncomeEntry[]): Array<{ month: string; va
     .sort((a, b) => a.month.localeCompare(b.month))
 }
 
-export function sourceBreakdown(entries: IncomeEntry[]): Array<{ label: string; value: number }> {
+export function sourceBreakdown(
+  entries: IncomeEntry[],
+  labelForEntry: (entry: IncomeEntry) => string = (entry) => entry.source,
+): Array<{ label: string; value: number }> {
   const map = new Map<string, number>()
   for (const entry of entries) {
-    map.set(entry.source, (map.get(entry.source) ?? 0) + entry.amount)
+    const label = labelForEntry(entry)
+    map.set(label, (map.get(label) ?? 0) + entry.amount)
   }
   return [...map.entries()]
     .map(([label, value]) => ({ label, value }))
