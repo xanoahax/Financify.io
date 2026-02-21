@@ -3,6 +3,10 @@
 All notable changes for desktop releases are documented here.  
 Each release must have a matching section (`## vX.Y.Z`) so GitHub release notes and the in-app update dialog stay in sync.
 
+## v0.9.50
+- Release packaging and version synchronization update.
+- Updated app and desktop metadata versions for the new publish.
+
 ## v0.9.49
 - Income charts and source breakdown now include logged job shifts as `Job: <Name>`.
 - Income entries now display job shift items with a clear `Job:` source label.
