@@ -31,6 +31,7 @@ export function SettingsPage(): JSX.Element {
   } = useAppContext()
   const [importMode, setImportMode] = useState<'replace' | 'merge'>('replace')
   const [importError, setImportError] = useState('')
+  const [importSuccessMessage, setImportSuccessMessage] = useState('')
   const [backgroundError, setBackgroundError] = useState('')
   const [confirmClearAllData, setConfirmClearAllData] = useState(false)
   const t = (de: string, en: string) => tx(settings.language, de, en)
@@ -82,11 +83,18 @@ export function SettingsPage(): JSX.Element {
     }
     try {
       setImportError('')
+      setImportSuccessMessage('')
       const text = await file.text()
       const parsed = JSON.parse(text) as AppBackup
       await importBackup(parsed, importMode)
+      setImportSuccessMessage(
+        importMode === 'replace'
+          ? t('JSON-Import erfolgreich (Ersetzen).', 'JSON import successful (replace).')
+          : t('JSON-Import erfolgreich (Zusammenfuehren).', 'JSON import successful (merge).'),
+      )
       event.target.value = ''
     } catch (error) {
+      setImportSuccessMessage('')
       setImportError(error instanceof Error ? error.message : t('Import fehlgeschlagen. Bitte JSON-Format prüfen.', 'Import failed. Please verify JSON format.'))
     }
   }
@@ -427,6 +435,25 @@ export function SettingsPage(): JSX.Element {
               </button>
               <button type="button" className="button button-secondary" onClick={() => setConfirmClearAllData(false)}>
                 {t('Abbrechen', 'Cancel')}
+              </button>
+            </div>
+          </article>
+        </div>
+      ) : null}
+
+      {importSuccessMessage ? (
+        <div className="form-modal-backdrop" onClick={() => setImportSuccessMessage('')} role="presentation">
+          <article className="card form-modal confirm-modal" onClick={(event) => event.stopPropagation()}>
+            <header className="section-header">
+              <h2>{t('Import erfolgreich', 'Import successful')}</h2>
+              <button type="button" className="icon-button" onClick={() => setImportSuccessMessage('')} aria-label={t('Popup schließen', 'Close popup')}>
+                ×
+              </button>
+            </header>
+            <p>{importSuccessMessage}</p>
+            <div className="form-actions">
+              <button type="button" className="button button-primary" onClick={() => setImportSuccessMessage('')}>
+                {t('OK', 'OK')}
               </button>
             </div>
           </article>
