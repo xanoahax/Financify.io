@@ -58,3 +58,8 @@ npm run build
 - Data stays local on the device (no backend).
 - JSON backup supports `replace` and `merge` import modes.
 - Code is structured to stay compatible with a future Tauri desktop packaging step.
+# Release Notes Source
+
+Desktop release notes are sourced from `CHANGELOG.md`.
+For every new version, add a section like `## v0.9.50` before tagging a release.
+The release workflow validates this and uses the same notes for GitHub release text and in-app update notes.
