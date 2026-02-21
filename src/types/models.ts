@@ -88,6 +88,17 @@ export interface Settings {
   privacyHideAmounts: boolean
 }
 
+export interface UserProfile {
+  id: string
+  name: string
+  createdAt: string
+  updatedAt: string
+  lastOpenedAt: string
+  onboardingCompleted: boolean
+  authMode: 'none' | 'pin' | 'password'
+  authSecretHash: string
+}
+
 export interface UiState {
   sidebarCollapsed: boolean
   globalSearch: string
@@ -120,12 +131,29 @@ export interface UpdatePrompt {
   date?: string
 }
 
-export interface AppBackup {
-  exportedAt: string
+export interface ProfileBackupPayload {
+  meta: Pick<UserProfile, 'id' | 'name' | 'createdAt' | 'updatedAt' | 'lastOpenedAt' | 'onboardingCompleted' | 'authMode' | 'authSecretHash'>
   settings: Settings
   uiState: UiState
   backgroundImageDataUrl: string | null
   subscriptions: Subscription[]
   incomeEntries: IncomeEntry[]
   interestScenarios: InterestScenario[]
+}
+
+export interface AppBackup {
+  backupSchema?: number
+  appVersion?: string
+  exportedAt: string
+  scope?: 'single-profile' | 'all-profiles'
+  activeProfileId?: string
+  profile?: ProfileBackupPayload
+  profiles?: ProfileBackupPayload[]
+  // Legacy single-profile fallback fields.
+  settings?: Settings
+  uiState?: UiState
+  backgroundImageDataUrl?: string | null
+  subscriptions?: Subscription[]
+  incomeEntries?: IncomeEntry[]
+  interestScenarios?: InterestScenario[]
 }

@@ -3,6 +3,14 @@
 All notable changes for desktop releases are documented here.  
 Each release must have a matching section (`## vX.Y.Z`) so GitHub release notes and the in-app update dialog stay in sync.
 
+## v0.9.51
+- Added multi-profile support with profile-specific local storage and IndexedDB separation.
+- Added first-start setup flow (onboarding) before entering the dashboard.
+- Added profile setup options during onboarding: profile name plus optional PIN/password protection.
+- Added profile management in Settings, including post-setup protection updates via Edit Profile.
+- Added controlled onboarding exit for newly added profiles while keeping first-start onboarding non-exitable.
+- Updated backup payload to profile-aware schema (`backupSchema: 2`, `scope`, `profile` metadata).
+
 ## v0.9.50
 - Release packaging and version synchronization update.
 - Updated app and desktop metadata versions for the new publish.

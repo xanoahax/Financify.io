@@ -1,9 +1,11 @@
 import type { Settings, ShiftJobConfig, UiState } from '../types/models'
+import {
+  getBackgroundImageStorageKey,
+  getSettingsStorageKey,
+  getSkippedUpdateVersionStorageKey,
+  getUiStateStorageKey,
+} from './profileStore'
 
-const SETTINGS_KEY = 'financify.settings'
-const UI_STATE_KEY = 'financify.ui-state'
-const BACKGROUND_IMAGE_KEY = 'financify.background-image'
-const SKIPPED_UPDATE_VERSION_KEY = 'financify.updater.skipped-version'
 const LEGACY_MIGRATION_SHIFT_JOB_ID = 'job-legacy-foodaffairs'
 const SUPPORTED_CURRENCIES = ['EUR', 'USD'] as const
 type SupportedCurrency = (typeof SUPPORTED_CURRENCIES)[number]
@@ -79,8 +81,11 @@ function normalizeCurrency(raw: unknown): SupportedCurrency {
   return SUPPORTED_CURRENCIES.includes(upper as SupportedCurrency) ? (upper as SupportedCurrency) : defaultSettings.currency
 }
 
-export function loadSettings(): Settings {
-  const parsed = parseJson<Record<string, unknown>>(window.localStorage.getItem(SETTINGS_KEY), defaultSettings as unknown as Record<string, unknown>)
+export function loadSettings(profileId: string): Settings {
+  const parsed = parseJson<Record<string, unknown>>(
+    window.localStorage.getItem(getSettingsStorageKey(profileId)),
+    defaultSettings as unknown as Record<string, unknown>,
+  )
   const shiftJobs = normalizeShiftJobs(parsed.shiftJobs, parsed.foodAffairsHourlyRate)
   const defaultShiftJobId =
     typeof parsed.defaultShiftJobId === 'string' && shiftJobs.some((job) => job.id === parsed.defaultShiftJobId)
@@ -96,48 +101,48 @@ export function loadSettings(): Settings {
   }
 }
 
-export function saveSettings(settings: Settings): void {
-  window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
+export function saveSettings(profileId: string, settings: Settings): void {
+  window.localStorage.setItem(getSettingsStorageKey(profileId), JSON.stringify(settings))
 }
 
-export function loadUiState(): UiState {
-  return parseJson(window.localStorage.getItem(UI_STATE_KEY), defaultUiState)
+export function loadUiState(profileId: string): UiState {
+  return parseJson(window.localStorage.getItem(getUiStateStorageKey(profileId)), defaultUiState)
 }
 
-export function saveUiState(uiState: UiState): void {
-  window.localStorage.setItem(UI_STATE_KEY, JSON.stringify(uiState))
+export function saveUiState(profileId: string, uiState: UiState): void {
+  window.localStorage.setItem(getUiStateStorageKey(profileId), JSON.stringify(uiState))
 }
 
-export function loadBackgroundImageDataUrl(): string | null {
-  const raw = window.localStorage.getItem(BACKGROUND_IMAGE_KEY)
+export function loadBackgroundImageDataUrl(profileId: string): string | null {
+  const raw = window.localStorage.getItem(getBackgroundImageStorageKey(profileId))
   return raw && raw.startsWith('data:image/') ? raw : null
 }
 
-export function saveBackgroundImageDataUrl(dataUrl: string): void {
-  window.localStorage.setItem(BACKGROUND_IMAGE_KEY, dataUrl)
+export function saveBackgroundImageDataUrl(profileId: string, dataUrl: string): void {
+  window.localStorage.setItem(getBackgroundImageStorageKey(profileId), dataUrl)
 }
 
-export function clearBackgroundImageDataUrl(): void {
-  window.localStorage.removeItem(BACKGROUND_IMAGE_KEY)
+export function clearBackgroundImageDataUrl(profileId: string): void {
+  window.localStorage.removeItem(getBackgroundImageStorageKey(profileId))
 }
 
-export function clearPersistedPreferences(): void {
-  window.localStorage.removeItem(SETTINGS_KEY)
-  window.localStorage.removeItem(UI_STATE_KEY)
-  clearBackgroundImageDataUrl()
-  window.localStorage.removeItem(SKIPPED_UPDATE_VERSION_KEY)
+export function clearPersistedPreferences(profileId: string): void {
+  window.localStorage.removeItem(getSettingsStorageKey(profileId))
+  window.localStorage.removeItem(getUiStateStorageKey(profileId))
+  clearBackgroundImageDataUrl(profileId)
+  window.localStorage.removeItem(getSkippedUpdateVersionStorageKey(profileId))
 }
 
-export function loadSkippedUpdateVersion(): string {
-  const raw = window.localStorage.getItem(SKIPPED_UPDATE_VERSION_KEY)
+export function loadSkippedUpdateVersion(profileId: string): string {
+  const raw = window.localStorage.getItem(getSkippedUpdateVersionStorageKey(profileId))
   return typeof raw === 'string' ? raw : ''
 }
 
-export function saveSkippedUpdateVersion(version: string): void {
+export function saveSkippedUpdateVersion(profileId: string, version: string): void {
   const normalized = version.trim()
   if (!normalized) {
-    window.localStorage.removeItem(SKIPPED_UPDATE_VERSION_KEY)
+    window.localStorage.removeItem(getSkippedUpdateVersionStorageKey(profileId))
     return
   }
-  window.localStorage.setItem(SKIPPED_UPDATE_VERSION_KEY, normalized)
+  window.localStorage.setItem(getSkippedUpdateVersionStorageKey(profileId), normalized)
 }

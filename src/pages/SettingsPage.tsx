@@ -28,19 +28,46 @@ export function SettingsPage(): JSX.Element {
     checkForUpdates,
     skippedUpdateVersion,
     updateCheckError,
+    profiles,
+    activeProfileId,
+    activeProfile,
+    createProfile,
+    switchProfile,
+    renameProfile,
+    deleteProfile,
+    updateProfileProtection,
   } = useAppContext()
   const [importMode, setImportMode] = useState<'replace' | 'merge'>('replace')
   const [importError, setImportError] = useState('')
   const [importSuccessMessage, setImportSuccessMessage] = useState('')
   const [backgroundError, setBackgroundError] = useState('')
   const [confirmClearAllData, setConfirmClearAllData] = useState(false)
+  const [confirmDeleteProfile, setConfirmDeleteProfile] = useState(false)
+  const [newProfileName, setNewProfileName] = useState('')
+  const [renameProfileName, setRenameProfileName] = useState(activeProfile?.name ?? '')
+  const [editProfileOpen, setEditProfileOpen] = useState(false)
+  const [editAuthMode, setEditAuthMode] = useState<'none' | 'pin' | 'password'>('none')
+  const [editAuthSecret, setEditAuthSecret] = useState('')
+  const [editAuthSecretConfirm, setEditAuthSecretConfirm] = useState('')
+  const [editProfileError, setEditProfileError] = useState('')
+  const [savingProfileEdit, setSavingProfileEdit] = useState(false)
   const t = (de: string, en: string) => tx(settings.language, de, en)
   const hasBackgroundImage = Boolean(backgroundImageDataUrl)
   const currencySymbol = getCurrencySymbol(settings.currency)
+  const canDeleteProfile = profiles.length > 1
 
   async function exportJson(): Promise<void> {
     const payload = exportBackup()
-    await saveTextFileWithDialog(`financify-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(payload, null, 2), 'application/json')
+    const slug = (activeProfile?.name ?? 'profile')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'profile'
+    const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '-')
+    await saveTextFileWithDialog(
+      `financify-backup-${slug}-${timestamp}-v${packageJson.version}-schema2.json`,
+      JSON.stringify(payload, null, 2),
+      'application/json',
+    )
   }
 
   async function checkUpdatesNow(): Promise<void> {
@@ -124,6 +151,64 @@ export function SettingsPage(): JSX.Element {
     }
   }
 
+  function handleCreateProfile(): void {
+    createProfile(newProfileName)
+    setRenameProfileName(newProfileName.trim())
+    setNewProfileName('')
+  }
+
+  function handleRenameActiveProfile(): void {
+    if (!activeProfile) {
+      return
+    }
+    renameProfile(activeProfile.id, renameProfileName)
+    setRenameProfileName(renameProfileName.trim())
+  }
+
+  async function handleDeleteActiveProfile(): Promise<void> {
+    if (!activeProfile) {
+      return
+    }
+    try {
+      await deleteProfile(activeProfile.id)
+      setConfirmDeleteProfile(false)
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : t('Profil konnte nicht gelöscht werden.', 'Profile could not be deleted.'))
+      setConfirmDeleteProfile(false)
+    }
+  }
+
+  function openEditProfile(): void {
+    if (!activeProfile) {
+      return
+    }
+    setEditAuthMode(activeProfile.authMode)
+    setEditAuthSecret('')
+    setEditAuthSecretConfirm('')
+    setEditProfileError('')
+    setEditProfileOpen(true)
+  }
+
+  async function handleSaveEditProfile(): Promise<void> {
+    if (!activeProfile) {
+      return
+    }
+    if (editAuthMode !== 'none' && editAuthSecret !== editAuthSecretConfirm) {
+      setEditProfileError(t('PIN/Passwort stimmt nicht überein.', 'PIN/password does not match.'))
+      return
+    }
+    try {
+      setSavingProfileEdit(true)
+      setEditProfileError('')
+      await updateProfileProtection(activeProfile.id, editAuthMode, editAuthMode === 'none' ? undefined : editAuthSecret)
+      setEditProfileOpen(false)
+    } catch (error) {
+      setEditProfileError(error instanceof Error ? error.message : t('Profilschutz konnte nicht gespeichert werden.', 'Could not save profile protection.'))
+    } finally {
+      setSavingProfileEdit(false)
+    }
+  }
+
   return (
     <section className="page">
       <header className="page-header">
@@ -145,6 +230,81 @@ export function SettingsPage(): JSX.Element {
           </button>
         </div>
       </header>
+
+      <article className="card">
+        <header className="section-header">
+          <h2>{t('Profile', 'Profiles')}</h2>
+        </header>
+        <div className="setting-list">
+          <label>
+            {t('Aktives Profil', 'Active profile')}
+            <select
+              value={activeProfileId}
+              onChange={(event) => {
+                const nextId = event.target.value
+                switchProfile(nextId)
+                const nextProfile = profiles.find((profile) => profile.id === nextId)
+                setRenameProfileName(nextProfile?.name ?? '')
+              }}
+            >
+              {profiles.map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+	          <div className="job-row">
+	            <label>
+	              {t('Neues Profil', 'New profile')}
+              <input
+                value={newProfileName}
+                onChange={(event) => setNewProfileName(event.target.value)}
+                placeholder={t('z. B. Alex', 'e.g. Alex')}
+              />
+            </label>
+	            <div className="inline-controls">
+	              <button type="button" className="button button-secondary" onClick={handleCreateProfile}>
+	                {t('Profil hinzufügen', 'Add profile')}
+	              </button>
+	            </div>
+	            <small className="muted">
+	              {t(
+	                'Nach dem Hinzufügen startet die Einrichtung. Du kannst sie später verlassen und fortsetzen.',
+	                'After adding, setup starts. You can leave it and continue later.',
+	              )}
+	            </small>
+	          </div>
+
+          <div className="job-row">
+            <label>
+              {t('Profilname ändern', 'Rename profile')}
+              <input
+                value={renameProfileName}
+                onChange={(event) => setRenameProfileName(event.target.value)}
+                placeholder={t('Profilname', 'Profile name')}
+              />
+            </label>
+            <div className="inline-controls">
+              <button type="button" className="button button-secondary" onClick={handleRenameActiveProfile} disabled={!activeProfile}>
+                {t('Umbenennen', 'Rename')}
+              </button>
+              <button type="button" className="button button-secondary" onClick={openEditProfile} disabled={!activeProfile}>
+                {t('Profil bearbeiten', 'Edit profile')}
+              </button>
+              <button
+                type="button"
+                className="button button-danger"
+                onClick={() => setConfirmDeleteProfile(true)}
+                disabled={!activeProfile || !canDeleteProfile}
+              >
+                {t('Profil löschen', 'Delete profile')}
+              </button>
+            </div>
+          </div>
+        </div>
+      </article>
 
       <div className="two-column">
         <article className="card">
@@ -413,6 +573,93 @@ export function SettingsPage(): JSX.Element {
           </button>
         </div>
       </article>
+
+      {editProfileOpen ? (
+        <div className="form-modal-backdrop" onClick={() => setEditProfileOpen(false)} role="presentation">
+          <article className="card form-modal confirm-modal" onClick={(event) => event.stopPropagation()}>
+            <header className="section-header">
+              <h2>{t('Profil bearbeiten', 'Edit profile')}</h2>
+              <button type="button" className="icon-button" onClick={() => setEditProfileOpen(false)} aria-label={t('Popup schließen', 'Close popup')}>
+                ×
+              </button>
+            </header>
+            <div className="setting-list">
+              <label>
+                {t('Schutzmodus', 'Protection mode')}
+                <select value={editAuthMode} onChange={(event) => setEditAuthMode(event.target.value as 'none' | 'pin' | 'password')}>
+                  <option value="none">{t('Kein Schutz', 'No protection')}</option>
+                  <option value="pin">{t('PIN', 'PIN')}</option>
+                  <option value="password">{t('Passwort', 'Password')}</option>
+                </select>
+              </label>
+              {editAuthMode !== 'none' ? (
+                <>
+                  <label>
+                    {editAuthMode === 'pin' ? t('Neue PIN', 'New PIN') : t('Neues Passwort', 'New password')}
+                    <input
+                      type="password"
+                      inputMode={editAuthMode === 'pin' ? 'numeric' : 'text'}
+                      value={editAuthSecret}
+                      onChange={(event) => setEditAuthSecret(event.target.value)}
+                      placeholder={
+                        editAuthMode === 'pin'
+                          ? t('4-8 Ziffern (leer = unverändert)', '4-8 digits (empty = unchanged)')
+                          : t('mind. 6 Zeichen (leer = unverändert)', 'min. 6 chars (empty = unchanged)')
+                      }
+                    />
+                  </label>
+                  <label>
+                    {t('Bestätigen', 'Confirm')}
+                    <input
+                      type="password"
+                      inputMode={editAuthMode === 'pin' ? 'numeric' : 'text'}
+                      value={editAuthSecretConfirm}
+                      onChange={(event) => setEditAuthSecretConfirm(event.target.value)}
+                      placeholder={t('Erneut eingeben', 'Enter again')}
+                    />
+                  </label>
+                </>
+              ) : null}
+              {editProfileError ? <p className="error-text">{editProfileError}</p> : null}
+            </div>
+            <div className="form-actions">
+              <button type="button" className="button button-primary" onClick={() => void handleSaveEditProfile()} disabled={savingProfileEdit}>
+                {savingProfileEdit ? t('Speichert...', 'Saving...') : t('Speichern', 'Save')}
+              </button>
+              <button type="button" className="button button-secondary" onClick={() => setEditProfileOpen(false)} disabled={savingProfileEdit}>
+                {t('Abbrechen', 'Cancel')}
+              </button>
+            </div>
+          </article>
+        </div>
+      ) : null}
+
+      {confirmDeleteProfile ? (
+        <div className="form-modal-backdrop" onClick={() => setConfirmDeleteProfile(false)} role="presentation">
+          <article className="card form-modal confirm-modal" onClick={(event) => event.stopPropagation()}>
+            <header className="section-header">
+              <h2>{t('Profil wirklich löschen?', 'Delete profile permanently?')}</h2>
+              <button type="button" className="icon-button" onClick={() => setConfirmDeleteProfile(false)} aria-label={t('Popup schließen', 'Close popup')}>
+                ×
+              </button>
+            </header>
+            <p>
+              {t(
+                'Das aktive Profil und alle zugehörigen Daten werden dauerhaft entfernt.',
+                'The active profile and all its data will be permanently removed.',
+              )}
+            </p>
+            <div className="form-actions">
+              <button type="button" className="button button-danger" onClick={() => void handleDeleteActiveProfile()}>
+                {t('Profil löschen', 'Delete profile')}
+              </button>
+              <button type="button" className="button button-secondary" onClick={() => setConfirmDeleteProfile(false)}>
+                {t('Abbrechen', 'Cancel')}
+              </button>
+            </div>
+          </article>
+        </div>
+      ) : null}
 
       {confirmClearAllData ? (
         <div className="form-modal-backdrop" onClick={() => setConfirmClearAllData(false)} role="presentation">

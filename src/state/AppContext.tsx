@@ -1,4 +1,4 @@
-﻿import { createContext, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   clearPersistedPreferences,
   clearBackgroundImageDataUrl,
@@ -14,6 +14,7 @@ import {
   saveUiState,
 } from '../data/settingsStore'
 import {
+  clearRepositoryCache,
   listIncomeEntries,
   listInterestScenarios,
   listSubscriptions,
@@ -27,21 +28,45 @@ import {
   saveInterestScenario,
   saveSubscription,
 } from '../data/repositories'
+import { deleteProfileDb } from '../data/db'
+import {
+  DEFAULT_PROFILE_ID,
+  hasLegacyLocalData,
+  loadActiveProfileId,
+  loadProfiles,
+  makeProfile,
+  saveActiveProfileId,
+  saveProfiles,
+} from '../data/profileStore'
 import type {
   AppBackup,
   AppLanguage,
   IncomeEntry,
   InterestScenario,
   InterestScenarioInput,
+  ProfileBackupPayload,
   Settings,
   ShiftJobConfig,
   Subscription,
   ToastMessage,
   UpdatePrompt,
   UiState,
+  UserProfile,
 } from '../types/models'
 import { tx } from '../utils/i18n'
 import { isTauriRuntime } from '../utils/runtime'
+
+export interface OnboardingSetupInput {
+  language: Settings['language']
+  theme: Settings['theme']
+  currency: Settings['currency']
+  dateFormat: Settings['dateFormat']
+  profileName: string
+  authMode: 'none' | 'pin' | 'password'
+  authSecret?: string
+  jobName?: string
+  jobHourlyRate?: number
+}
 
 export interface AppContextValue {
   loading: boolean
@@ -52,6 +77,11 @@ export interface AppContextValue {
   backgroundImageDataUrl: string | null
   uiState: UiState
   toasts: ToastMessage[]
+  profiles: UserProfile[]
+  activeProfileId: string
+  activeProfile: UserProfile | null
+  needsOnboarding: boolean
+  canExitOnboarding: boolean
   updatesSupported: boolean
   isCheckingForUpdates: boolean
   isInstallingUpdate: boolean
@@ -62,6 +92,13 @@ export interface AppContextValue {
   setUiState: (changes: Partial<UiState>) => void
   setBackgroundImageFromFile: (file: File) => Promise<void>
   clearBackgroundImage: () => void
+  createProfile: (name: string) => void
+  switchProfile: (profileId: string) => void
+  renameProfile: (profileId: string, name: string) => void
+  deleteProfile: (profileId: string) => Promise<void>
+  completeOnboarding: (payload: OnboardingSetupInput) => Promise<void>
+  exitOnboarding: () => void
+  updateProfileProtection: (profileId: string, authMode: UserProfile['authMode'], authSecret?: string) => Promise<void>
   addSubscription: (payload: Omit<Subscription, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>
   updateSubscription: (id: string, payload: Partial<Subscription>) => Promise<void>
   deleteSubscription: (id: string) => Promise<void>
@@ -214,11 +251,60 @@ async function safelyCloseUpdateHandle(handle: UpdaterHandle | null): Promise<vo
   }
 }
 
+function resolveInitialProfileName(): string {
+  const locale = typeof navigator !== 'undefined' ? navigator.language.toLowerCase() : 'en'
+  return locale.startsWith('de') ? 'Standard' : 'Default'
+}
+
+function resolveUniqueProfileName(name: string, profiles: UserProfile[], language: AppLanguage): string {
+  const base = (name.trim() || tx(language, 'Neues Profil', 'New profile')).slice(0, 40)
+  if (!profiles.some((profile) => profile.name.toLowerCase() === base.toLowerCase())) {
+    return base
+  }
+  let counter = 2
+  while (profiles.some((profile) => profile.name.toLowerCase() === `${base} (${counter})`.toLowerCase())) {
+    counter += 1
+  }
+  return `${base} (${counter})`
+}
+
+async function hashSecret(secret: string): Promise<string> {
+  const normalized = secret.trim()
+  if (!normalized) {
+    return ''
+  }
+  const data = new TextEncoder().encode(normalized)
+  const digest = await crypto.subtle.digest('SHA-256', data)
+  const bytes = Array.from(new Uint8Array(digest))
+  return bytes.map((byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+function buildInitialProfileState(): { profiles: UserProfile[]; activeProfileId: string } {
+  let profiles = loadProfiles()
+  if (profiles.length === 0) {
+    const seededProfile = makeProfile(resolveInitialProfileName(), {
+      id: DEFAULT_PROFILE_ID,
+      onboardingCompleted: hasLegacyLocalData(),
+    })
+    profiles = [seededProfile]
+    saveProfiles(profiles)
+    saveActiveProfileId(seededProfile.id)
+  }
+  const activeProfileId = loadActiveProfileId(profiles) || profiles[0]?.id || ''
+  if (activeProfileId) {
+    saveActiveProfileId(activeProfileId)
+  }
+  return { profiles, activeProfileId }
+}
+
 export function AppProvider({ children }: { children: ReactNode }): JSX.Element {
+  const initialProfileState = useMemo(() => buildInitialProfileState(), [])
   const [loading, setLoading] = useState(true)
-  const [settings, setSettingsState] = useState<Settings>(() => loadSettings())
-  const [backgroundImageDataUrl, setBackgroundImageDataUrlState] = useState<string | null>(() => loadBackgroundImageDataUrl())
-  const [uiState, setUiStateState] = useState<UiState>(() => loadUiState())
+  const [profiles, setProfilesState] = useState<UserProfile[]>(initialProfileState.profiles)
+  const [activeProfileId, setActiveProfileIdState] = useState<string>(initialProfileState.activeProfileId)
+  const [settings, setSettingsState] = useState<Settings>(() => loadSettings(initialProfileState.activeProfileId))
+  const [backgroundImageDataUrl, setBackgroundImageDataUrlState] = useState<string | null>(() => loadBackgroundImageDataUrl(initialProfileState.activeProfileId))
+  const [uiState, setUiStateState] = useState<UiState>(() => loadUiState(initialProfileState.activeProfileId))
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([])
   const [incomeEntries, setIncomeEntries] = useState<IncomeEntry[]>([])
   const [scenarios, setScenarios] = useState<InterestScenario[]>([])
@@ -228,9 +314,15 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
   const [isCheckingForUpdates, setIsCheckingForUpdates] = useState(false)
   const [isInstallingUpdate, setIsInstallingUpdate] = useState(false)
   const [updateCheckError, setUpdateCheckError] = useState<string | null>(null)
-  const [skippedUpdateVersion, setSkippedUpdateVersion] = useState<string>(() => loadSkippedUpdateVersion())
+  const [skippedUpdateVersion, setSkippedUpdateVersion] = useState<string>(() => loadSkippedUpdateVersion(initialProfileState.activeProfileId))
 
   const updatesSupported = isTauriRuntime()
+  const activeProfile = useMemo(() => profiles.find((profile) => profile.id === activeProfileId) ?? null, [activeProfileId, profiles])
+  const needsOnboarding = Boolean(activeProfile && !activeProfile.onboardingCompleted)
+  const canExitOnboarding = useMemo(
+    () => needsOnboarding && profiles.some((profile) => profile.id !== activeProfileId && profile.onboardingCompleted),
+    [activeProfileId, needsOnboarding, profiles],
+  )
 
   const dismissToast = useCallback((id: string) => {
     setToasts((current) => current.filter((item) => item.id !== id))
@@ -248,20 +340,36 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
   )
 
   useEffect(() => {
+    if (!activeProfileId) {
+      return
+    }
     let mounted = true
     async function boot(): Promise<void> {
+      setLoading(true)
       try {
         const [loadedSubscriptions, loadedIncomeEntries, loadedScenarios] = await Promise.all([
-          listSubscriptions(),
-          listIncomeEntries(),
-          listInterestScenarios(),
+          listSubscriptions(activeProfileId),
+          listIncomeEntries(activeProfileId),
+          listInterestScenarios(activeProfileId),
         ])
         if (!mounted) {
           return
         }
+        setSettingsState(loadSettings(activeProfileId))
+        setUiStateState(loadUiState(activeProfileId))
+        setBackgroundImageDataUrlState(loadBackgroundImageDataUrl(activeProfileId))
+        setSkippedUpdateVersion(loadSkippedUpdateVersion(activeProfileId))
         setSubscriptions(loadedSubscriptions)
         setIncomeEntries(loadedIncomeEntries)
         setScenarios(loadedScenarios)
+        setProfilesState((current) => {
+          const timestamp = nowIso()
+          const next = current.map((profile) =>
+            profile.id === activeProfileId ? { ...profile, lastOpenedAt: timestamp, updatedAt: timestamp } : profile,
+          )
+          saveProfiles(next)
+          return next
+        })
       } catch (error) {
         if (mounted) {
           pushToast({
@@ -280,19 +388,28 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
     return () => {
       mounted = false
     }
-  }, [pushToast, settings.language])
+  }, [activeProfileId, pushToast, settings.language])
 
   useEffect(() => {
-    saveSettings(settings)
-  }, [settings])
+    if (!activeProfileId) {
+      return
+    }
+    saveSettings(activeProfileId, settings)
+  }, [activeProfileId, settings])
 
   useEffect(() => {
-    saveUiState(uiState)
-  }, [uiState])
+    if (!activeProfileId) {
+      return
+    }
+    saveUiState(activeProfileId, uiState)
+  }, [activeProfileId, uiState])
 
   useEffect(() => {
-    saveSkippedUpdateVersion(skippedUpdateVersion)
-  }, [skippedUpdateVersion])
+    if (!activeProfileId) {
+      return
+    }
+    saveSkippedUpdateVersion(activeProfileId, skippedUpdateVersion)
+  }, [activeProfileId, skippedUpdateVersion])
 
   const setSettings = useCallback((changes: Partial<Settings>) => {
     setSettingsState((current) => ({
@@ -306,8 +423,201 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
     setUiStateState((current) => ({ ...current, ...changes }))
   }, [])
 
+  const createProfile = useCallback(
+    (name: string) => {
+      const profileName = resolveUniqueProfileName(name, profiles, settings.language)
+      const nextProfile = makeProfile(profileName, { onboardingCompleted: false })
+      const nextProfiles = [...profiles, nextProfile]
+      saveProfiles(nextProfiles)
+      saveActiveProfileId(nextProfile.id)
+      setProfilesState(nextProfiles)
+      setActiveProfileIdState(nextProfile.id)
+      pushToast({ tone: 'success', text: tx(settings.language, 'Profil erstellt.', 'Profile created.') })
+    },
+    [profiles, pushToast, settings.language],
+  )
+
+  const switchProfile = useCallback(
+    (profileId: string) => {
+      if (!profiles.some((profile) => profile.id === profileId)) {
+        return
+      }
+      saveActiveProfileId(profileId)
+      setActiveProfileIdState(profileId)
+    },
+    [profiles],
+  )
+
+  const renameProfile = useCallback(
+    (profileId: string, name: string) => {
+      const existing = profiles.find((profile) => profile.id === profileId)
+      if (!existing) {
+        return
+      }
+      const remaining = profiles.filter((profile) => profile.id !== profileId)
+      const nextName = resolveUniqueProfileName(name, remaining, settings.language)
+      const nextProfiles = profiles.map((profile) =>
+        profile.id === profileId ? { ...profile, name: nextName, updatedAt: nowIso() } : profile,
+      )
+      saveProfiles(nextProfiles)
+      setProfilesState(nextProfiles)
+    },
+    [profiles, settings.language],
+  )
+
+  const deleteProfile = useCallback(
+    async (profileId: string) => {
+      if (!profiles.some((profile) => profile.id === profileId)) {
+        return
+      }
+      if (profiles.length <= 1) {
+        throw new Error(tx(settings.language, 'Mindestens ein Profil muss bestehen bleiben.', 'At least one profile must remain.'))
+      }
+      await Promise.all([
+        replaceSubscriptions(profileId, []),
+        replaceIncomeEntries(profileId, []),
+        replaceInterestScenarios(profileId, []),
+      ])
+      clearPersistedPreferences(profileId)
+      await deleteProfileDb(profileId)
+      clearRepositoryCache(profileId)
+
+      const nextProfiles = profiles.filter((profile) => profile.id !== profileId)
+      const nextActiveId = activeProfileId === profileId ? nextProfiles[0].id : activeProfileId
+      saveProfiles(nextProfiles)
+      saveActiveProfileId(nextActiveId)
+      setProfilesState(nextProfiles)
+      setActiveProfileIdState(nextActiveId)
+      pushToast({ tone: 'success', text: tx(settings.language, 'Profil gelöscht.', 'Profile deleted.') })
+    },
+    [activeProfileId, profiles, pushToast, settings.language],
+  )
+
+  const completeOnboarding = useCallback(
+    async (payload: OnboardingSetupInput) => {
+      if (!activeProfileId) {
+        return
+      }
+
+      const profileName = payload.profileName.trim()
+      if (!profileName) {
+        throw new Error(tx(payload.language, 'Bitte gib einen Profilnamen ein.', 'Please enter a profile name.'))
+      }
+
+      const secret = payload.authSecret?.trim() ?? ''
+      if (payload.authMode === 'pin' && !/^\d{4,8}$/.test(secret)) {
+        throw new Error(
+          tx(
+            payload.language,
+            'PIN muss aus 4 bis 8 Ziffern bestehen.',
+            'PIN must be 4 to 8 digits.',
+          ),
+        )
+      }
+      if (payload.authMode === 'password' && secret.length < 6) {
+        throw new Error(
+          tx(
+            payload.language,
+            'Passwort muss mindestens 6 Zeichen lang sein.',
+            'Password must be at least 6 characters long.',
+          ),
+        )
+      }
+      const authSecretHash = payload.authMode === 'none' ? '' : await hashSecret(secret)
+
+      const normalizedRate = Number(payload.jobHourlyRate)
+      const jobName = payload.jobName?.trim() ?? ''
+      const shouldCreateJob = Boolean(jobName) && Number.isFinite(normalizedRate) && normalizedRate > 0
+      const shiftJobs: ShiftJobConfig[] = shouldCreateJob ? [{ id: `job-${crypto.randomUUID()}`, name: jobName, hourlyRate: normalizedRate }] : []
+      setSettingsState((current) => ({
+        ...current,
+        language: payload.language,
+        theme: payload.theme,
+        currency: payload.currency,
+        dateFormat: payload.dateFormat,
+        shiftJobs,
+        defaultShiftJobId: shiftJobs[0]?.id ?? '',
+      }))
+      setProfilesState((current) => {
+        const timestamp = nowIso()
+        const remaining = current.filter((profile) => profile.id !== activeProfileId)
+        const nextProfileName = resolveUniqueProfileName(profileName, remaining, payload.language)
+        const next = current.map((profile) =>
+          profile.id === activeProfileId
+            ? {
+                ...profile,
+                name: nextProfileName,
+                onboardingCompleted: true,
+                authMode: payload.authMode,
+                authSecretHash,
+                updatedAt: timestamp,
+              }
+            : profile,
+        )
+        saveProfiles(next)
+        return next
+      })
+      pushToast({ tone: 'success', text: tx(payload.language, 'Einrichtung abgeschlossen.', 'Setup completed.') })
+    },
+    [activeProfileId, pushToast],
+  )
+
+  const exitOnboarding = useCallback(() => {
+    if (!activeProfileId) {
+      return
+    }
+    const fallback = profiles.find((profile) => profile.id !== activeProfileId && profile.onboardingCompleted)
+    if (!fallback) {
+      return
+    }
+    saveActiveProfileId(fallback.id)
+    setActiveProfileIdState(fallback.id)
+  }, [activeProfileId, profiles])
+
+  const updateProfileProtection = useCallback(
+    async (profileId: string, authMode: UserProfile['authMode'], authSecret?: string) => {
+      const target = profiles.find((profile) => profile.id === profileId)
+      if (!target) {
+        throw new Error(tx(settings.language, 'Profil nicht gefunden.', 'Profile not found.'))
+      }
+
+      const secret = authSecret?.trim() ?? ''
+      const canKeepExisting = secret.length === 0 && target.authMode === authMode && Boolean(target.authSecretHash)
+      let nextHash = authMode === 'none' ? '' : target.authSecretHash
+      if (authMode === 'pin') {
+        if (!canKeepExisting && !/^\d{4,8}$/.test(secret)) {
+          throw new Error(tx(settings.language, 'PIN muss aus 4 bis 8 Ziffern bestehen.', 'PIN must be 4 to 8 digits.'))
+        }
+        if (!canKeepExisting) {
+          nextHash = await hashSecret(secret)
+        }
+      }
+      if (authMode === 'password') {
+        if (!canKeepExisting && secret.length < 6) {
+          throw new Error(tx(settings.language, 'Passwort muss mindestens 6 Zeichen lang sein.', 'Password must be at least 6 characters long.'))
+        }
+        if (!canKeepExisting) {
+          nextHash = await hashSecret(secret)
+        }
+      }
+
+      const nextProfiles = profiles.map((profile) =>
+        profile.id === profileId
+          ? { ...profile, authMode, authSecretHash: nextHash, updatedAt: nowIso() }
+          : profile,
+      )
+      saveProfiles(nextProfiles)
+      setProfilesState(nextProfiles)
+      pushToast({ tone: 'success', text: tx(settings.language, 'Profilschutz aktualisiert.', 'Profile protection updated.') })
+    },
+    [profiles, pushToast, settings.language],
+  )
+
   const setBackgroundImageFromFile = useCallback(
     async (file: File) => {
+      if (!activeProfileId) {
+        return
+      }
       if (!file.type.startsWith('image/')) {
         throw new Error(tx(settings.language, 'Bitte wähle eine Bilddatei aus.', 'Please select an image file.'))
       }
@@ -316,24 +626,30 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       }
       const dataUrl = await readFileAsDataUrl(file, settings.language)
       try {
-        saveBackgroundImageDataUrl(dataUrl)
+        saveBackgroundImageDataUrl(activeProfileId, dataUrl)
       } catch {
         throw new Error(tx(settings.language, 'Bild konnte lokal nicht gespeichert werden. Bitte ein kleineres Bild versuchen.', 'Image could not be saved locally. Please try a smaller image.'))
       }
       setBackgroundImageDataUrlState(dataUrl)
       pushToast({ tone: 'success', text: tx(settings.language, 'Hintergrundbild aktualisiert.', 'Background image updated.') })
     },
-    [pushToast, settings.language],
+    [activeProfileId, pushToast, settings.language],
   )
 
   const clearBackgroundImage = useCallback(() => {
-    clearBackgroundImageDataUrl()
+    if (!activeProfileId) {
+      return
+    }
+    clearBackgroundImageDataUrl(activeProfileId)
     setBackgroundImageDataUrlState(null)
     pushToast({ tone: 'success', text: tx(settings.language, 'Hintergrundbild entfernt.', 'Background image removed.') })
-  }, [pushToast, settings.language])
+  }, [activeProfileId, pushToast, settings.language])
 
   const addSubscription = useCallback(
     async (payload: Omit<Subscription, 'id' | 'createdAt' | 'updatedAt'>) => {
+      if (!activeProfileId) {
+        return
+      }
       ensurePositiveNumber(payload.amount, tx(settings.language, 'Abo-Betrag', 'Subscription amount'), settings.language)
       if (!payload.name.trim()) {
         throw new Error(tx(settings.language, 'Abo-Name ist erforderlich.', 'Subscription name is required.'))
@@ -349,15 +665,18 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
         createdAt: timestamp,
         updatedAt: timestamp,
       }
-      await saveSubscription(next)
+      await saveSubscription(activeProfileId, next)
       setSubscriptions((current) => [next, ...current])
       pushToast({ tone: 'success', text: tx(settings.language, 'Abo gespeichert.', 'Subscription saved.') })
     },
-    [pushToast, settings.language],
+    [activeProfileId, pushToast, settings.language],
   )
 
   const updateSubscription = useCallback(
     async (id: string, payload: Partial<Subscription>) => {
+      if (!activeProfileId) {
+        return
+      }
       const existing = subscriptions.find((item) => item.id === id)
       if (!existing) {
         throw new Error(tx(settings.language, 'Abo nicht gefunden.', 'Subscription not found.'))
@@ -369,35 +688,41 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
         updatedAt: nowIso(),
       }
       ensurePositiveNumber(merged.amount, tx(settings.language, 'Abo-Betrag', 'Subscription amount'), settings.language)
-      await saveSubscription(merged)
+      await saveSubscription(activeProfileId, merged)
       setSubscriptions((current) => current.map((item) => (item.id === id ? merged : item)))
       pushToast({ tone: 'success', text: tx(settings.language, 'Abo aktualisiert.', 'Subscription updated.') })
     },
-    [pushToast, settings.language, subscriptions],
+    [activeProfileId, pushToast, settings.language, subscriptions],
   )
 
   const deleteSubscription = useCallback(
     async (id: string) => {
+      if (!activeProfileId) {
+        return
+      }
       const existing = subscriptions.find((item) => item.id === id)
       if (!existing) {
         return
       }
-      await removeSubscription(id)
+      await removeSubscription(activeProfileId, id)
       setSubscriptions((current) => current.filter((item) => item.id !== id))
       pushToast({
         tone: 'warning',
         text: tx(settings.language, 'Abo gelöscht.', 'Subscription deleted.'),
         actionLabel: tx(settings.language, 'Rückgängig', 'Undo'),
         action: () => {
-          void saveSubscription(existing).then(() => setSubscriptions((current) => [existing, ...current]))
+          void saveSubscription(activeProfileId, existing).then(() => setSubscriptions((current) => [existing, ...current]))
         },
       })
     },
-    [pushToast, settings.language, subscriptions],
+    [activeProfileId, pushToast, settings.language, subscriptions],
   )
 
   const addIncomeEntry = useCallback(
     async (payload: Omit<IncomeEntry, 'id' | 'createdAt' | 'updatedAt'>) => {
+      if (!activeProfileId) {
+        return
+      }
       ensurePositiveNumber(payload.amount, tx(settings.language, 'Einkommensbetrag', 'Income amount'), settings.language)
       if (!payload.source.trim()) {
         throw new Error(tx(settings.language, 'Einkommensquelle ist erforderlich.', 'Income source is required.'))
@@ -410,15 +735,18 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
         createdAt: timestamp,
         updatedAt: timestamp,
       }
-      await saveIncomeEntry(next)
+      await saveIncomeEntry(activeProfileId, next)
       setIncomeEntries((current) => [next, ...current])
       pushToast({ tone: 'success', text: tx(settings.language, 'Einkommenseintrag gespeichert.', 'Income entry saved.') })
     },
-    [pushToast, settings.language],
+    [activeProfileId, pushToast, settings.language],
   )
 
   const updateIncomeEntry = useCallback(
     async (id: string, payload: Partial<IncomeEntry>) => {
+      if (!activeProfileId) {
+        return
+      }
       const existing = incomeEntries.find((item) => item.id === id)
       if (!existing) {
         throw new Error(tx(settings.language, 'Einkommenseintrag nicht gefunden.', 'Income entry not found.'))
@@ -430,35 +758,41 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
         updatedAt: nowIso(),
       }
       ensurePositiveNumber(merged.amount, tx(settings.language, 'Einkommensbetrag', 'Income amount'), settings.language)
-      await saveIncomeEntry(merged)
+      await saveIncomeEntry(activeProfileId, merged)
       setIncomeEntries((current) => current.map((item) => (item.id === id ? merged : item)))
       pushToast({ tone: 'success', text: tx(settings.language, 'Einkommenseintrag aktualisiert.', 'Income entry updated.') })
     },
-    [incomeEntries, pushToast, settings.language],
+    [activeProfileId, incomeEntries, pushToast, settings.language],
   )
 
   const deleteIncomeEntry = useCallback(
     async (id: string) => {
+      if (!activeProfileId) {
+        return
+      }
       const existing = incomeEntries.find((item) => item.id === id)
       if (!existing) {
         return
       }
-      await removeIncomeEntry(id)
+      await removeIncomeEntry(activeProfileId, id)
       setIncomeEntries((current) => current.filter((item) => item.id !== id))
       pushToast({
         tone: 'warning',
         text: tx(settings.language, 'Einkommenseintrag gelöscht.', 'Income entry deleted.'),
         actionLabel: tx(settings.language, 'Rückgängig', 'Undo'),
         action: () => {
-          void saveIncomeEntry(existing).then(() => setIncomeEntries((current) => [existing, ...current]))
+          void saveIncomeEntry(activeProfileId, existing).then(() => setIncomeEntries((current) => [existing, ...current]))
         },
       })
     },
-    [incomeEntries, pushToast, settings.language],
+    [activeProfileId, incomeEntries, pushToast, settings.language],
   )
 
   const addScenario = useCallback(
     async (payload: InterestScenarioInput) => {
+      if (!activeProfileId) {
+        return
+      }
       const timestamp = nowIso()
       const next: InterestScenario = {
         id: makeId(),
@@ -466,76 +800,140 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
         createdAt: timestamp,
         updatedAt: timestamp,
       }
-      await saveInterestScenario(next)
+      await saveInterestScenario(activeProfileId, next)
       setScenarios((current) => [next, ...current])
       pushToast({ tone: 'success', text: tx(settings.language, 'Szenario gespeichert.', 'Scenario saved.') })
     },
-    [pushToast, settings.language],
+    [activeProfileId, pushToast, settings.language],
   )
 
   const updateScenario = useCallback(
     async (id: string, payload: InterestScenarioInput) => {
+      if (!activeProfileId) {
+        return
+      }
       const existing = scenarios.find((item) => item.id === id)
       if (!existing) {
         throw new Error(tx(settings.language, 'Szenario nicht gefunden.', 'Scenario not found.'))
       }
       const merged: InterestScenario = { ...existing, input: payload, updatedAt: nowIso() }
-      await saveInterestScenario(merged)
+      await saveInterestScenario(activeProfileId, merged)
       setScenarios((current) => current.map((item) => (item.id === id ? merged : item)))
       pushToast({ tone: 'success', text: tx(settings.language, 'Szenario aktualisiert.', 'Scenario updated.') })
     },
-    [pushToast, scenarios, settings.language],
+    [activeProfileId, pushToast, scenarios, settings.language],
   )
 
   const deleteScenario = useCallback(
     async (id: string) => {
-      await removeInterestScenario(id)
+      if (!activeProfileId) {
+        return
+      }
+      await removeInterestScenario(activeProfileId, id)
       setScenarios((current) => current.filter((item) => item.id !== id))
       pushToast({ tone: 'success', text: tx(settings.language, 'Szenario entfernt.', 'Scenario removed.') })
     },
-    [pushToast, settings.language],
+    [activeProfileId, pushToast, settings.language],
   )
 
   const exportBackup = useCallback((): AppBackup => {
+    const profileMeta: ProfileBackupPayload['meta'] = activeProfile
+      ? {
+          id: activeProfile.id,
+          name: activeProfile.name,
+          createdAt: activeProfile.createdAt,
+          updatedAt: activeProfile.updatedAt,
+          lastOpenedAt: activeProfile.lastOpenedAt,
+          onboardingCompleted: activeProfile.onboardingCompleted,
+          authMode: activeProfile.authMode,
+          authSecretHash: activeProfile.authSecretHash,
+        }
+      : {
+          id: activeProfileId || DEFAULT_PROFILE_ID,
+          name: 'User',
+          createdAt: nowIso(),
+          updatedAt: nowIso(),
+          lastOpenedAt: nowIso(),
+          onboardingCompleted: false,
+          authMode: 'none',
+          authSecretHash: '',
+        }
     return {
+      backupSchema: 2,
       exportedAt: nowIso(),
-      settings,
-      uiState,
-      backgroundImageDataUrl,
-      subscriptions,
-      incomeEntries,
-      interestScenarios: scenarios,
+      scope: 'single-profile',
+      activeProfileId,
+      profile: {
+        meta: profileMeta,
+        settings,
+        uiState,
+        backgroundImageDataUrl,
+        subscriptions,
+        incomeEntries,
+        interestScenarios: scenarios,
+      },
     }
-  }, [backgroundImageDataUrl, incomeEntries, scenarios, settings, subscriptions, uiState])
+  }, [activeProfile, activeProfileId, backgroundImageDataUrl, incomeEntries, scenarios, settings, subscriptions, uiState])
 
   const importBackup = useCallback(
     async (payload: AppBackup, mode: 'replace' | 'merge') => {
-      const safeSubscriptions = Array.isArray(payload.subscriptions) ? payload.subscriptions : []
-      const safeIncomeEntries = Array.isArray(payload.incomeEntries) ? payload.incomeEntries : []
-      const safeScenarios = Array.isArray(payload.interestScenarios) ? payload.interestScenarios : []
+      if (!activeProfileId) {
+        throw new Error(tx(settings.language, 'Kein aktives Profil gefunden.', 'No active profile found.'))
+      }
+      if (payload.scope === 'all-profiles') {
+        throw new Error(
+          tx(
+            settings.language,
+            'Voll-Backups mit mehreren Profilen können aktuell nicht importiert werden.',
+            'Full backups with multiple profiles cannot be imported yet.',
+          ),
+        )
+      }
+      const sourceProfile =
+        payload.profile && typeof payload.profile === 'object'
+          ? payload.profile
+          : {
+              meta: {
+                id: activeProfileId,
+                name: activeProfile?.name ?? 'User',
+                createdAt: activeProfile?.createdAt ?? nowIso(),
+                updatedAt: nowIso(),
+                lastOpenedAt: nowIso(),
+                onboardingCompleted: activeProfile?.onboardingCompleted ?? true,
+              },
+              settings: payload.settings ?? defaultSettings,
+              uiState: payload.uiState ?? defaultUiState,
+              backgroundImageDataUrl: payload.backgroundImageDataUrl ?? null,
+              subscriptions: payload.subscriptions ?? [],
+              incomeEntries: payload.incomeEntries ?? [],
+              interestScenarios: payload.interestScenarios ?? [],
+            }
+      const safeSubscriptions = Array.isArray(sourceProfile.subscriptions) ? sourceProfile.subscriptions : []
+      const safeIncomeEntries = Array.isArray(sourceProfile.incomeEntries) ? sourceProfile.incomeEntries : []
+      const safeScenarios = Array.isArray(sourceProfile.interestScenarios) ? sourceProfile.interestScenarios : []
       const mergedSubscriptions = mode === 'replace' ? safeSubscriptions : uniqueById([...subscriptions, ...safeSubscriptions])
       const mergedIncome = mode === 'replace' ? safeIncomeEntries : uniqueById([...incomeEntries, ...safeIncomeEntries])
       const mergedScenarios = mode === 'replace' ? safeScenarios : uniqueById([...scenarios, ...safeScenarios])
 
       await Promise.all([
-        replaceSubscriptions(mergedSubscriptions),
-        replaceIncomeEntries(mergedIncome),
-        replaceInterestScenarios(mergedScenarios),
+        replaceSubscriptions(activeProfileId, mergedSubscriptions),
+        replaceIncomeEntries(activeProfileId, mergedIncome),
+        replaceInterestScenarios(activeProfileId, mergedScenarios),
       ])
 
       setSubscriptions(mergedSubscriptions)
       setIncomeEntries(mergedIncome)
       setScenarios(mergedScenarios)
       if (mode === 'replace') {
-        const normalizedSettings = normalizeImportedSettings(payload.settings)
-        const normalizedUiState = normalizeImportedUiState(payload.uiState)
+        const normalizedSettings = normalizeImportedSettings(sourceProfile.settings)
+        const normalizedUiState = normalizeImportedUiState(sourceProfile.uiState)
         setSettingsState(normalizedSettings)
         setUiStateState(normalizedUiState)
-        if (typeof payload.backgroundImageDataUrl === 'string' && payload.backgroundImageDataUrl.startsWith('data:image/')) {
-          saveBackgroundImageDataUrl(payload.backgroundImageDataUrl)
-          setBackgroundImageDataUrlState(payload.backgroundImageDataUrl)
+        if (typeof sourceProfile.backgroundImageDataUrl === 'string' && sourceProfile.backgroundImageDataUrl.startsWith('data:image/')) {
+          saveBackgroundImageDataUrl(activeProfileId, sourceProfile.backgroundImageDataUrl)
+          setBackgroundImageDataUrlState(sourceProfile.backgroundImageDataUrl)
         } else {
-          clearBackgroundImageDataUrl()
+          clearBackgroundImageDataUrl(activeProfileId)
           setBackgroundImageDataUrlState(null)
         }
       }
@@ -547,7 +945,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
             : tx(settings.language, 'Backup importiert (zusammenführen).', 'Backup imported (merge).'),
       })
     },
-    [incomeEntries, pushToast, scenarios, settings.language, subscriptions],
+    [activeProfile, activeProfileId, incomeEntries, pushToast, scenarios, settings.language, subscriptions],
   )
 
   const dismissUpdatePrompt = useCallback(() => {
@@ -678,8 +1076,19 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
   }, [pendingUpdate, pushToast, settings.language])
 
   const clearAllData = useCallback(async () => {
-    await Promise.all([replaceSubscriptions([]), replaceIncomeEntries([]), replaceInterestScenarios([])])
-    clearPersistedPreferences()
+    for (const profile of profiles) {
+      await Promise.all([
+        replaceSubscriptions(profile.id, []),
+        replaceIncomeEntries(profile.id, []),
+        replaceInterestScenarios(profile.id, []),
+      ])
+      clearPersistedPreferences(profile.id)
+      await deleteProfileDb(profile.id)
+      clearRepositoryCache(profile.id)
+    }
+    const nextProfile = makeProfile(resolveInitialProfileName(), { id: DEFAULT_PROFILE_ID, onboardingCompleted: false })
+    saveProfiles([nextProfile])
+    saveActiveProfileId(nextProfile.id)
     setPendingUpdate((current) => {
       void safelyCloseUpdateHandle(current)
       return null
@@ -687,6 +1096,8 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
     setUpdatePrompt(null)
     setSkippedUpdateVersion('')
     setUpdateCheckError(null)
+    setProfilesState([nextProfile])
+    setActiveProfileIdState(nextProfile.id)
     setSubscriptions([])
     setIncomeEntries([])
     setScenarios([])
@@ -694,7 +1105,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
     setUiStateState(defaultUiState)
     setBackgroundImageDataUrlState(null)
     pushToast({ tone: 'warning', text: tx(settings.language, 'Alle lokalen Daten wurden gelöscht.', 'All local data has been deleted.') })
-  }, [pushToast, settings.language])
+  }, [profiles, pushToast, settings.language])
 
   const contextValue = useMemo<AppContextValue>(
     () => ({
@@ -706,6 +1117,11 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       backgroundImageDataUrl,
       uiState,
       toasts,
+      profiles,
+      activeProfileId,
+      activeProfile,
+      needsOnboarding,
+      canExitOnboarding,
       updatesSupported,
       isCheckingForUpdates,
       isInstallingUpdate,
@@ -716,6 +1132,13 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       setUiState,
       setBackgroundImageFromFile,
       clearBackgroundImage,
+      createProfile,
+      switchProfile,
+      renameProfile,
+      deleteProfile,
+      completeOnboarding,
+      exitOnboarding,
+      updateProfileProtection,
       addSubscription,
       updateSubscription,
       deleteSubscription,
@@ -738,19 +1161,30 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       addIncomeEntry,
       addScenario,
       addSubscription,
+      activeProfile,
+      activeProfileId,
+      canExitOnboarding,
       checkForUpdates,
+      completeOnboarding,
+      createProfile,
       dismissUpdatePrompt,
       deleteIncomeEntry,
+      deleteProfile,
       deleteScenario,
       deleteSubscription,
       dismissToast,
       clearAllData,
+      exitOnboarding,
       exportBackup,
       importBackup,
       incomeEntries,
       isCheckingForUpdates,
       isInstallingUpdate,
       loading,
+      needsOnboarding,
+      profiles,
+      renameProfile,
+      updateProfileProtection,
       scenarios,
       setSettings,
       setUiState,
@@ -761,6 +1195,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       skippedUpdateVersion,
       skipUpdateVersion,
       subscriptions,
+      switchProfile,
       toasts,
       uiState,
       updateCheckError,
@@ -775,3 +1210,4 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
 
   return <AppContext.Provider value={contextValue}>{children}</AppContext.Provider>
 }
+

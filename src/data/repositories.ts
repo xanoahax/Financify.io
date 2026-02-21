@@ -1,4 +1,4 @@
-﻿import type { IncomeEntry, InterestScenario, Subscription } from '../types/models'
+import type { IncomeEntry, InterestScenario, Subscription } from '../types/models'
 import { getDb, type SubscriptionRecord } from './db'
 import { getNextPaymentDate } from '../utils/subscription'
 
@@ -6,10 +6,26 @@ interface CacheStore<T> {
   data: T[] | null
 }
 
-const cache = {
-  subscriptions: { data: null } as CacheStore<Subscription>,
-  incomeEntries: { data: null } as CacheStore<IncomeEntry>,
-  interestScenarios: { data: null } as CacheStore<InterestScenario>,
+interface ProfileRepositoryCache {
+  subscriptions: CacheStore<Subscription>
+  incomeEntries: CacheStore<IncomeEntry>
+  interestScenarios: CacheStore<InterestScenario>
+}
+
+const cacheByProfile = new Map<string, ProfileRepositoryCache>()
+
+function getProfileCache(profileId: string): ProfileRepositoryCache {
+  const existing = cacheByProfile.get(profileId)
+  if (existing) {
+    return existing
+  }
+  const created: ProfileRepositoryCache = {
+    subscriptions: { data: null },
+    incomeEntries: { data: null },
+    interestScenarios: { data: null },
+  }
+  cacheByProfile.set(profileId, created)
+  return created
 }
 
 function cloneRows<T>(rows: T[]): T[] {
@@ -29,8 +45,12 @@ function toSubscriptionRecord(subscription: Subscription): SubscriptionRecord {
   }
 }
 
-async function getAllCached<T>(storeName: keyof typeof cache, fetcher: () => Promise<T[]>): Promise<T[]> {
-  const storeCache = cache[storeName] as CacheStore<T>
+async function getAllCached<T>(
+  profileId: string,
+  storeName: keyof ProfileRepositoryCache,
+  fetcher: () => Promise<T[]>,
+): Promise<T[]> {
+  const storeCache = getProfileCache(profileId)[storeName] as CacheStore<T>
   if (storeCache.data) {
     return cloneRows(storeCache.data)
   }
@@ -39,99 +59,107 @@ async function getAllCached<T>(storeName: keyof typeof cache, fetcher: () => Pro
   return cloneRows(rows)
 }
 
-function markDirty(storeName: keyof typeof cache): void {
-  cache[storeName].data = null
+function markDirty(profileId: string, storeName: keyof ProfileRepositoryCache): void {
+  getProfileCache(profileId)[storeName].data = null
 }
 
-export async function listSubscriptions(): Promise<Subscription[]> {
-  return getAllCached('subscriptions', async () => {
-    const db = await getDb()
+export function clearRepositoryCache(profileId?: string): void {
+  if (!profileId) {
+    cacheByProfile.clear()
+    return
+  }
+  cacheByProfile.delete(profileId)
+}
+
+export async function listSubscriptions(profileId: string): Promise<Subscription[]> {
+  return getAllCached(profileId, 'subscriptions', async () => {
+    const db = await getDb(profileId)
     const rows = await db.getAll('subscriptions')
     return rows.map(mapSubscriptionRecord).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   })
 }
 
-export async function saveSubscription(subscription: Subscription): Promise<void> {
-  const db = await getDb()
+export async function saveSubscription(profileId: string, subscription: Subscription): Promise<void> {
+  const db = await getDb(profileId)
   await db.put('subscriptions', toSubscriptionRecord(subscription))
-  markDirty('subscriptions')
+  markDirty(profileId, 'subscriptions')
 }
 
-export async function removeSubscription(id: string): Promise<void> {
-  const db = await getDb()
+export async function removeSubscription(profileId: string, id: string): Promise<void> {
+  const db = await getDb(profileId)
   await db.delete('subscriptions', id)
-  markDirty('subscriptions')
+  markDirty(profileId, 'subscriptions')
 }
 
-export async function replaceSubscriptions(subscriptions: Subscription[]): Promise<void> {
-  const db = await getDb()
+export async function replaceSubscriptions(profileId: string, subscriptions: Subscription[]): Promise<void> {
+  const db = await getDb(profileId)
   const tx = db.transaction('subscriptions', 'readwrite')
   await tx.store.clear()
   for (const item of subscriptions) {
     await tx.store.put(toSubscriptionRecord(item))
   }
   await tx.done
-  markDirty('subscriptions')
+  markDirty(profileId, 'subscriptions')
 }
 
-export async function listIncomeEntries(): Promise<IncomeEntry[]> {
-  return getAllCached('incomeEntries', async () => {
-    const db = await getDb()
+export async function listIncomeEntries(profileId: string): Promise<IncomeEntry[]> {
+  return getAllCached(profileId, 'incomeEntries', async () => {
+    const db = await getDb(profileId)
     const rows = await db.getAll('incomeEntries')
     return rows.sort((a, b) => b.date.localeCompare(a.date))
   })
 }
 
-export async function saveIncomeEntry(entry: IncomeEntry): Promise<void> {
-  const db = await getDb()
+export async function saveIncomeEntry(profileId: string, entry: IncomeEntry): Promise<void> {
+  const db = await getDb(profileId)
   await db.put('incomeEntries', entry)
-  markDirty('incomeEntries')
+  markDirty(profileId, 'incomeEntries')
 }
 
-export async function removeIncomeEntry(id: string): Promise<void> {
-  const db = await getDb()
+export async function removeIncomeEntry(profileId: string, id: string): Promise<void> {
+  const db = await getDb(profileId)
   await db.delete('incomeEntries', id)
-  markDirty('incomeEntries')
+  markDirty(profileId, 'incomeEntries')
 }
 
-export async function replaceIncomeEntries(entries: IncomeEntry[]): Promise<void> {
-  const db = await getDb()
+export async function replaceIncomeEntries(profileId: string, entries: IncomeEntry[]): Promise<void> {
+  const db = await getDb(profileId)
   const tx = db.transaction('incomeEntries', 'readwrite')
   await tx.store.clear()
   for (const item of entries) {
     await tx.store.put(item)
   }
   await tx.done
-  markDirty('incomeEntries')
+  markDirty(profileId, 'incomeEntries')
 }
 
-export async function listInterestScenarios(): Promise<InterestScenario[]> {
-  return getAllCached('interestScenarios', async () => {
-    const db = await getDb()
+export async function listInterestScenarios(profileId: string): Promise<InterestScenario[]> {
+  return getAllCached(profileId, 'interestScenarios', async () => {
+    const db = await getDb(profileId)
     const rows = await db.getAll('interestScenarios')
     return rows.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   })
 }
 
-export async function saveInterestScenario(scenario: InterestScenario): Promise<void> {
-  const db = await getDb()
+export async function saveInterestScenario(profileId: string, scenario: InterestScenario): Promise<void> {
+  const db = await getDb(profileId)
   await db.put('interestScenarios', scenario)
-  markDirty('interestScenarios')
+  markDirty(profileId, 'interestScenarios')
 }
 
-export async function removeInterestScenario(id: string): Promise<void> {
-  const db = await getDb()
+export async function removeInterestScenario(profileId: string, id: string): Promise<void> {
+  const db = await getDb(profileId)
   await db.delete('interestScenarios', id)
-  markDirty('interestScenarios')
+  markDirty(profileId, 'interestScenarios')
 }
 
-export async function replaceInterestScenarios(scenarios: InterestScenario[]): Promise<void> {
-  const db = await getDb()
+export async function replaceInterestScenarios(profileId: string, scenarios: InterestScenario[]): Promise<void> {
+  const db = await getDb(profileId)
   const tx = db.transaction('interestScenarios', 'readwrite')
   await tx.store.clear()
   for (const item of scenarios) {
     await tx.store.put(item)
   }
   await tx.done
-  markDirty('interestScenarios')
+  markDirty(profileId, 'interestScenarios')
 }

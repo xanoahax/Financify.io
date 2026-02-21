@@ -10,6 +10,7 @@ import { SettingsPage } from './pages/SettingsPage'
 import { StatsPage } from './pages/StatsPage'
 import { SubscriptionsPage } from './pages/SubscriptionsPage'
 import { useAppContext } from './state/useAppContext'
+import type { OnboardingSetupInput } from './state/AppContext'
 import { tx } from './utils/i18n'
 import { isGitHubPagesRuntime } from './utils/runtime'
 
@@ -23,6 +24,155 @@ function resolveTheme(theme: 'light' | 'dark' | 'glass' | 'system'): 'light' | '
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
 
+function OnboardingCard(props: {
+  profileName: string
+  defaults: Pick<OnboardingSetupInput, 'language' | 'theme' | 'currency' | 'dateFormat'>
+  onFinish: (payload: OnboardingSetupInput) => Promise<void>
+  canExit: boolean
+  onExit: () => void
+}): JSX.Element {
+  const [profileName, setProfileName] = useState(props.profileName)
+  const [language, setLanguage] = useState(props.defaults.language)
+  const [theme, setTheme] = useState(props.defaults.theme)
+  const [currency, setCurrency] = useState(props.defaults.currency)
+  const [dateFormat, setDateFormat] = useState(props.defaults.dateFormat)
+  const [authMode, setAuthMode] = useState<OnboardingSetupInput['authMode']>('none')
+  const [authSecret, setAuthSecret] = useState('')
+  const [authSecretConfirm, setAuthSecretConfirm] = useState('')
+  const [jobName, setJobName] = useState('')
+  const [jobRate, setJobRate] = useState('18')
+  const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  async function submit(): Promise<void> {
+    if (authMode !== 'none' && authSecret !== authSecretConfirm) {
+      setError(tx(language, 'PIN/Passwort stimmt nicht überein.', 'PIN/password does not match.'))
+      return
+    }
+    setError('')
+    setSubmitting(true)
+    try {
+      await props.onFinish({
+        profileName,
+        language,
+        theme,
+        currency,
+        dateFormat,
+        authMode,
+        authSecret: authMode === 'none' ? undefined : authSecret,
+        jobName,
+        jobHourlyRate: Number(jobRate),
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : tx(language, 'Einrichtung fehlgeschlagen.', 'Setup failed.'))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <article className="card onboarding-card">
+      <header className="section-header">
+        <h1>{tx(language, 'Einrichtung', 'Setup')}</h1>
+        <p className="muted">{tx(language, `Profil: ${profileName || props.profileName}`, `Profile: ${profileName || props.profileName}`)}</p>
+      </header>
+      <div className="setting-list">
+        <label>
+          {tx(language, 'Profilname', 'Profile name')}
+          <input value={profileName} onChange={(event) => setProfileName(event.target.value)} placeholder={tx(language, 'z. B. Noah', 'e.g. Noah')} />
+        </label>
+        <label>
+          {tx(language, 'Sprache', 'Language')}
+          <select value={language} onChange={(event) => setLanguage(event.target.value as typeof language)}>
+            <option value="de">Deutsch</option>
+            <option value="en">English</option>
+          </select>
+        </label>
+        <label>
+          {tx(language, 'Thema', 'Theme')}
+          <select value={theme} onChange={(event) => setTheme(event.target.value as typeof theme)}>
+            <option value="light">{tx(language, 'Hell', 'Light')}</option>
+            <option value="dark">{tx(language, 'Dunkel', 'Dark')}</option>
+            <option value="glass">{tx(language, 'Glas', 'Glass')}</option>
+            <option value="system">{tx(language, 'System', 'System')}</option>
+          </select>
+        </label>
+        <label>
+          {tx(language, 'Währung', 'Currency')}
+          <select value={currency} onChange={(event) => setCurrency(event.target.value as typeof currency)}>
+            <option value="EUR">EUR (€)</option>
+            <option value="USD">USD ($)</option>
+          </select>
+        </label>
+        <label>
+          {tx(language, 'Datumsformat', 'Date format')}
+          <select value={dateFormat} onChange={(event) => setDateFormat(event.target.value as typeof dateFormat)}>
+            <option value="DD.MM.YYYY">DD.MM.YYYY</option>
+            <option value="MM/DD/YYYY">MM/DD/YYYY</option>
+            <option value="YYYY-MM-DD">YYYY-MM-DD</option>
+          </select>
+        </label>
+        <label>
+          {tx(language, 'Profilschutz', 'Profile protection')}
+          <select value={authMode} onChange={(event) => setAuthMode(event.target.value as OnboardingSetupInput['authMode'])}>
+            <option value="none">{tx(language, 'Kein Schutz', 'No protection')}</option>
+            <option value="pin">{tx(language, 'PIN', 'PIN')}</option>
+            <option value="password">{tx(language, 'Passwort', 'Password')}</option>
+          </select>
+        </label>
+        {authMode !== 'none' ? (
+          <>
+            <label>
+              {authMode === 'pin' ? tx(language, 'PIN', 'PIN') : tx(language, 'Passwort', 'Password')}
+              <input
+                type={authMode === 'pin' ? 'password' : 'password'}
+                inputMode={authMode === 'pin' ? 'numeric' : 'text'}
+                value={authSecret}
+                onChange={(event) => setAuthSecret(event.target.value)}
+                placeholder={authMode === 'pin' ? tx(language, '4-8 Ziffern', '4-8 digits') : tx(language, 'mind. 6 Zeichen', 'min. 6 characters')}
+              />
+            </label>
+            <label>
+              {tx(language, 'Bestätigen', 'Confirm')}
+              <input
+                type="password"
+                inputMode={authMode === 'pin' ? 'numeric' : 'text'}
+                value={authSecretConfirm}
+                onChange={(event) => setAuthSecretConfirm(event.target.value)}
+                placeholder={tx(language, 'Erneut eingeben', 'Enter again')}
+              />
+            </label>
+          </>
+        ) : null}
+        <label>
+          {tx(language, 'Job (optional)', 'Job (optional)')}
+          <input value={jobName} onChange={(event) => setJobName(event.target.value)} placeholder={tx(language, 'z. B. FoodAffairs', 'e.g. FoodAffairs')} />
+        </label>
+        <label>
+          {tx(language, 'Stundensatz (optional)', 'Hourly rate (optional)')}
+          <input type="number" min={0.01} step="0.01" value={jobRate} onChange={(event) => setJobRate(event.target.value)} />
+        </label>
+      </div>
+      {error ? <p className="error-text">{error}</p> : null}
+      <div className="form-actions">
+        {props.canExit ? (
+          <button type="button" className="button button-secondary" onClick={props.onExit} disabled={submitting}>
+            {tx(language, 'Einrichtung verlassen', 'Leave setup')}
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="button button-primary"
+          onClick={() => void submit()}
+          disabled={submitting}
+        >
+          {submitting ? tx(language, 'Speichert...', 'Saving...') : tx(language, 'Einrichtung abschließen', 'Finish setup')}
+        </button>
+      </div>
+    </article>
+  )
+}
+
 export default function App(): JSX.Element {
   const {
     loading,
@@ -30,6 +180,14 @@ export default function App(): JSX.Element {
     backgroundImageDataUrl,
     uiState,
     setUiState,
+    profiles,
+    activeProfileId,
+    activeProfile,
+    switchProfile,
+    needsOnboarding,
+    canExitOnboarding,
+    completeOnboarding,
+    exitOnboarding,
     toasts,
     dismissToast,
     updatesSupported,
@@ -138,6 +296,31 @@ export default function App(): JSX.Element {
     )
   }
 
+  if (needsOnboarding) {
+    return (
+      <>
+        <div className="background-gradient-layer" aria-hidden="true" />
+        {backgroundImageDataUrl ? <div className="background-image-layer" style={backgroundStyle} aria-hidden="true" /> : null}
+        <main className="loading-shell">
+          <OnboardingCard
+            key={activeProfileId}
+            profileName={activeProfile?.name ?? 'User'}
+            defaults={{
+              language: settings.language,
+              theme: settings.theme,
+              currency: settings.currency,
+              dateFormat: settings.dateFormat,
+            }}
+            onFinish={completeOnboarding}
+            canExit={canExitOnboarding}
+            onExit={exitOnboarding}
+          />
+        </main>
+        <ToastHost toasts={toasts} onDismiss={dismissToast} language={language} />
+      </>
+    )
+  }
+
   return (
     <>
       <div className="background-gradient-layer" aria-hidden="true" />
@@ -183,6 +366,17 @@ export default function App(): JSX.Element {
               aria-label={t('Globale Suche', 'Global search')}
             />
             <div className="topbar-actions">
+              <select
+                value={activeProfileId}
+                onChange={(event) => switchProfile(event.target.value)}
+                aria-label={t('Profil wechseln', 'Switch profile')}
+              >
+                {profiles.map((profile) => (
+                  <option key={profile.id} value={profile.id}>
+                    {profile.name}
+                  </option>
+                ))}
+              </select>
               <button type="button" className="button button-secondary palette-launcher" onClick={() => setPaletteOpen(true)}>
                 {t('Cmd/Ctrl + K', 'Cmd/Ctrl + K')}
               </button>

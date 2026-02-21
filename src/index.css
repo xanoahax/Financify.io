@@ -31,34 +31,38 @@
 }
 
 :root[data-theme='dark'] {
-  --bg: #11141b;
-  --bg-elevated: rgba(26, 31, 42, 0.78);
-  --surface: #1a202b;
-  --surface-soft: #151a24;
-  --text: #f4f5f7;
-  --text-muted: #9ca6b8;
-  --border: rgba(220, 224, 232, 0.12);
+  --bg: #151517;
+  --bg-elevated: rgba(29, 29, 32, 0.8);
+  --surface: #1f2023;
+  --surface-soft: #191a1d;
+  --text: #f2f2f4;
+  --text-muted: #a7a8af;
+  --border: rgba(236, 236, 241, 0.12);
   --shadow-s1: 0 12px 32px rgba(0, 0, 0, 0.33);
   --shadow-s2: 0 20px 40px rgba(0, 0, 0, 0.46);
-  --select-arrow: #a5afc1;
-  --select-menu-bg: #1a202b;
+  --select-arrow: #b0b1b9;
+  --select-menu-bg: #1f2023;
+  --gradient-a: #6a6d76;
+  --gradient-b: #50535b;
   --success: #54d087;
   --warning: #ffd166;
   --error: #ff7b72;
 }
 
 :root[data-theme='glass'] {
-  --bg: #0b111b;
-  --bg-elevated: rgba(19, 28, 42, 0.52);
-  --surface: rgba(22, 33, 50, 0.44);
-  --surface-soft: rgba(15, 23, 36, 0.38);
-  --text: #eef5ff;
-  --text-muted: #9fb4d4;
-  --border: rgba(159, 190, 232, 0.25);
+  --bg: #121315;
+  --bg-elevated: rgba(31, 32, 36, 0.52);
+  --surface: rgba(37, 39, 44, 0.44);
+  --surface-soft: rgba(28, 30, 34, 0.38);
+  --text: #f1f2f4;
+  --text-muted: #aaadb4;
+  --border: rgba(210, 212, 218, 0.25);
   --shadow-s1: 0 16px 38px rgba(0, 0, 0, 0.34);
   --shadow-s2: 0 24px 52px rgba(0, 0, 0, 0.48);
-  --select-arrow: #b8cfee;
-  --select-menu-bg: #152133;
+  --select-arrow: #c0c2c9;
+  --select-menu-bg: #202226;
+  --gradient-a: #777a82;
+  --gradient-b: #555960;
   --success: #4ad7a2;
   --warning: #ffcf6a;
   --error: #ff8a8a;
@@ -263,7 +267,7 @@ td small {
     radial-gradient(circle at 12% 14%, color-mix(in srgb, var(--gradient-a) 30%, transparent), transparent 30%),
     radial-gradient(circle at 86% 12%, color-mix(in srgb, var(--gradient-a) 22%, transparent), transparent 34%),
     radial-gradient(circle at 80% 84%, color-mix(in srgb, var(--gradient-b) 24%, transparent), transparent 34%),
-    linear-gradient(150deg, rgba(10, 17, 30, 0.95), rgba(12, 22, 40, 0.84));
+    linear-gradient(150deg, rgba(16, 17, 19, 0.95), rgba(24, 25, 29, 0.84));
 }
 
 :root[data-gradient-overlay='off'] .background-gradient-layer {
@@ -290,38 +294,38 @@ td small {
 :root[data-theme='glass'] .card,
 :root[data-theme='glass'] .sidebar,
 :root[data-theme='glass'] .topbar {
-  border-color: rgba(157, 190, 232, 0.35);
+  border-color: rgba(196, 199, 207, 0.35);
 }
 
 :root[data-theme='glass'] input,
 :root[data-theme='glass'] select,
 :root[data-theme='glass'] textarea {
-  background: rgba(16, 26, 40, 0.52);
-  border-color: rgba(150, 184, 228, 0.36);
+  background: rgba(22, 24, 28, 0.52);
+  border-color: rgba(184, 188, 198, 0.36);
 }
 
 :root[data-theme='glass'] .button-secondary {
-  background: rgba(17, 29, 46, 0.52);
-  border-color: rgba(156, 188, 231, 0.42);
+  background: rgba(25, 27, 31, 0.52);
+  border-color: rgba(192, 195, 204, 0.42);
 }
 
 :root[data-theme='glass'] .button-tertiary {
-  color: #d9e7ff;
+  color: #e5e7ec;
 }
 
 :root[data-theme='glass'] .form-modal-backdrop {
-  background: rgba(4, 8, 14, 0.54);
+  background: rgba(8, 9, 11, 0.54);
 }
 
 :root[data-theme='glass'] .form-modal {
-  background: rgba(14, 22, 35, 0.9);
-  border-color: rgba(164, 198, 239, 0.5);
+  background: rgba(20, 22, 26, 0.9);
+  border-color: rgba(198, 201, 209, 0.5);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.52);
 }
 
 :root[data-theme='glass'] .palette {
-  background: rgba(14, 22, 35, 0.9);
-  border-color: rgba(164, 198, 239, 0.5);
+  background: rgba(20, 22, 26, 0.9);
+  border-color: rgba(198, 201, 209, 0.5);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.52);
 }
 
@@ -453,6 +457,16 @@ td small {
 
 .topbar input {
   width: min(540px, 100%);
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.topbar-actions select {
+  min-width: 170px;
 }
 
 .content {
@@ -1142,6 +1156,12 @@ input[type='checkbox']:disabled {
   text-align: center;
 }
 
+.onboarding-card {
+  width: min(680px, 100%);
+  display: grid;
+  gap: var(--space-4);
+}
+
 .empty-inline {
   color: var(--text-muted);
   font-size: 0.9rem;
@@ -1409,6 +1429,10 @@ input[type='checkbox']:disabled {
 
   .topbar input {
     width: 100%;
+  }
+
+  .topbar-actions select {
+    min-width: 136px;
   }
 
   .palette-launcher {
