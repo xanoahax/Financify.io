@@ -15,6 +15,8 @@
   --gradient-b: #25c99a;
   --select-arrow: #5f6570;
   --select-menu-bg: #ffffff;
+  --calendar-indicator-filter: invert(0);
+  --calendar-indicator-opacity: 0.85;
   --success: #1f8f4f;
   --warning: #bf8f00;
   --error: #c63b3b;
@@ -42,6 +44,8 @@
   --shadow-s2: 0 20px 40px rgba(0, 0, 0, 0.46);
   --select-arrow: #b0b1b9;
   --select-menu-bg: #1f2023;
+  --calendar-indicator-filter: invert(1) brightness(1.2);
+  --calendar-indicator-opacity: 0.98;
   --gradient-a: #6a6d76;
   --gradient-b: #50535b;
   --success: #54d087;
@@ -61,6 +65,8 @@
   --shadow-s2: 0 24px 52px rgba(0, 0, 0, 0.48);
   --select-arrow: #c0c2c9;
   --select-menu-bg: #202226;
+  --calendar-indicator-filter: invert(1) brightness(1.28);
+  --calendar-indicator-opacity: 0.98;
   --gradient-a: #777a82;
   --gradient-b: #555960;
   --success: #4ad7a2;
@@ -171,6 +177,30 @@ textarea {
   border-radius: var(--radius-input);
   padding: 0 var(--space-3);
   background: var(--surface);
+}
+
+:root[data-theme='light'] input[type='date'],
+:root[data-theme='light'] input[type='time'] {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] input[type='date'],
+:root[data-theme='dark'] input[type='time'],
+:root[data-theme='glass'] input[type='date'],
+:root[data-theme='glass'] input[type='time'] {
+  color-scheme: dark;
+}
+
+input[type='date'],
+input[type='time'] {
+  padding-right: 40px;
+}
+
+input[type='date']::-webkit-calendar-picker-indicator,
+input[type='time']::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: var(--calendar-indicator-opacity);
+  filter: var(--calendar-indicator-filter);
 }
 
 select {

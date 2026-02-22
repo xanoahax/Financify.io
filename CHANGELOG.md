@@ -3,6 +3,15 @@
 All notable changes for desktop releases are documented here.  
 Each release must have a matching section (`## vX.Y.Z`) so GitHub release notes and the in-app update dialog stay in sync.
 
+## v0.9.52
+- Kuss Bro: Erstes Usertesting in zentrale UX-Fixes umgesetzt.
+- Desktop-App merkt sich jetzt Fenstergröße und startet mit der zuletzt gespeicherten Größe.
+- Theme-Auswahl im Einrichtungsscreen wird sofort sichtbar auf die UI angewendet.
+- Modal-Backdrop-Verhalten gehärtet, damit Text-Markieren mit Drag außerhalb nicht mehr versehentlich Popups schließt.
+- Kalender-Symbole in Datums-/Zeitfeldern sind in allen Themes kontrastreicher sichtbar.
+- Abo-Kategorie im Abo-Log ist jetzt ein Dropdown mit sinnvollen Standardkategorien.
+- Top-Kosten/teuerste Abos zeigen Beträge inkl. Nachkommastellen.
+
 ## v0.9.51
 - Added multi-profile support with profile-specific local storage and IndexedDB separation.
 - Added first-start setup flow (onboarding) before entering the dashboard.

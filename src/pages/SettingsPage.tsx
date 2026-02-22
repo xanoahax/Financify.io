@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import packageJson from '../../package.json'
+import { useGuardedBackdropClose } from '../hooks/useGuardedBackdropClose'
 import { useAppContext } from '../state/useAppContext'
 import type { AppBackup, ShiftJobConfig } from '../types/models'
 import { saveTextFileWithDialog } from '../utils/csv'
@@ -55,6 +56,14 @@ export function SettingsPage(): JSX.Element {
   const hasBackgroundImage = Boolean(backgroundImageDataUrl)
   const currencySymbol = getCurrencySymbol(settings.currency)
   const canDeleteProfile = profiles.length > 1
+  const closeEditProfile = useCallback(() => setEditProfileOpen(false), [])
+  const closeDeleteProfileConfirm = useCallback(() => setConfirmDeleteProfile(false), [])
+  const closeClearAllDataConfirm = useCallback(() => setConfirmClearAllData(false), [])
+  const closeImportSuccess = useCallback(() => setImportSuccessMessage(''), [])
+  const editProfileBackdropCloseGuard = useGuardedBackdropClose(closeEditProfile)
+  const deleteProfileBackdropCloseGuard = useGuardedBackdropClose(closeDeleteProfileConfirm)
+  const clearAllDataBackdropCloseGuard = useGuardedBackdropClose(closeClearAllDataConfirm)
+  const importSuccessBackdropCloseGuard = useGuardedBackdropClose(closeImportSuccess)
 
   async function exportJson(): Promise<void> {
     const payload = exportBackup()
@@ -575,11 +584,16 @@ export function SettingsPage(): JSX.Element {
       </article>
 
       {editProfileOpen ? (
-        <div className="form-modal-backdrop" onClick={() => setEditProfileOpen(false)} role="presentation">
-          <article className="card form-modal confirm-modal" onClick={(event) => event.stopPropagation()}>
+        <div
+          className="form-modal-backdrop"
+          onMouseDown={editProfileBackdropCloseGuard.onBackdropMouseDown}
+          onClick={editProfileBackdropCloseGuard.onBackdropClick}
+          role="presentation"
+        >
+          <article className="card form-modal confirm-modal" onMouseDownCapture={editProfileBackdropCloseGuard.onModalMouseDownCapture} onClick={(event) => event.stopPropagation()}>
             <header className="section-header">
               <h2>{t('Profil bearbeiten', 'Edit profile')}</h2>
-              <button type="button" className="icon-button" onClick={() => setEditProfileOpen(false)} aria-label={t('Popup schließen', 'Close popup')}>
+              <button type="button" className="icon-button" onClick={closeEditProfile} aria-label={t('Popup schließen', 'Close popup')}>
                 ×
               </button>
             </header>
@@ -626,7 +640,7 @@ export function SettingsPage(): JSX.Element {
               <button type="button" className="button button-primary" onClick={() => void handleSaveEditProfile()} disabled={savingProfileEdit}>
                 {savingProfileEdit ? t('Speichert...', 'Saving...') : t('Speichern', 'Save')}
               </button>
-              <button type="button" className="button button-secondary" onClick={() => setEditProfileOpen(false)} disabled={savingProfileEdit}>
+              <button type="button" className="button button-secondary" onClick={closeEditProfile} disabled={savingProfileEdit}>
                 {t('Abbrechen', 'Cancel')}
               </button>
             </div>
@@ -635,11 +649,16 @@ export function SettingsPage(): JSX.Element {
       ) : null}
 
       {confirmDeleteProfile ? (
-        <div className="form-modal-backdrop" onClick={() => setConfirmDeleteProfile(false)} role="presentation">
-          <article className="card form-modal confirm-modal" onClick={(event) => event.stopPropagation()}>
+        <div
+          className="form-modal-backdrop"
+          onMouseDown={deleteProfileBackdropCloseGuard.onBackdropMouseDown}
+          onClick={deleteProfileBackdropCloseGuard.onBackdropClick}
+          role="presentation"
+        >
+          <article className="card form-modal confirm-modal" onMouseDownCapture={deleteProfileBackdropCloseGuard.onModalMouseDownCapture} onClick={(event) => event.stopPropagation()}>
             <header className="section-header">
               <h2>{t('Profil wirklich löschen?', 'Delete profile permanently?')}</h2>
-              <button type="button" className="icon-button" onClick={() => setConfirmDeleteProfile(false)} aria-label={t('Popup schließen', 'Close popup')}>
+              <button type="button" className="icon-button" onClick={closeDeleteProfileConfirm} aria-label={t('Popup schließen', 'Close popup')}>
                 ×
               </button>
             </header>
@@ -653,7 +672,7 @@ export function SettingsPage(): JSX.Element {
               <button type="button" className="button button-danger" onClick={() => void handleDeleteActiveProfile()}>
                 {t('Profil löschen', 'Delete profile')}
               </button>
-              <button type="button" className="button button-secondary" onClick={() => setConfirmDeleteProfile(false)}>
+              <button type="button" className="button button-secondary" onClick={closeDeleteProfileConfirm}>
                 {t('Abbrechen', 'Cancel')}
               </button>
             </div>
@@ -662,11 +681,16 @@ export function SettingsPage(): JSX.Element {
       ) : null}
 
       {confirmClearAllData ? (
-        <div className="form-modal-backdrop" onClick={() => setConfirmClearAllData(false)} role="presentation">
-          <article className="card form-modal confirm-modal" onClick={(event) => event.stopPropagation()}>
+        <div
+          className="form-modal-backdrop"
+          onMouseDown={clearAllDataBackdropCloseGuard.onBackdropMouseDown}
+          onClick={clearAllDataBackdropCloseGuard.onBackdropClick}
+          role="presentation"
+        >
+          <article className="card form-modal confirm-modal" onMouseDownCapture={clearAllDataBackdropCloseGuard.onModalMouseDownCapture} onClick={(event) => event.stopPropagation()}>
             <header className="section-header">
               <h2>{t('Alle Daten wirklich löschen?', 'Delete all data permanently?')}</h2>
-              <button type="button" className="icon-button" onClick={() => setConfirmClearAllData(false)} aria-label={t('Popup schließen', 'Close popup')}>
+              <button type="button" className="icon-button" onClick={closeClearAllDataConfirm} aria-label={t('Popup schließen', 'Close popup')}>
                 ×
               </button>
             </header>
@@ -680,7 +704,7 @@ export function SettingsPage(): JSX.Element {
               <button type="button" className="button button-danger" onClick={() => void handleClearAllDataConfirmed()}>
                 {t('Endgültig löschen', 'Delete permanently')}
               </button>
-              <button type="button" className="button button-secondary" onClick={() => setConfirmClearAllData(false)}>
+              <button type="button" className="button button-secondary" onClick={closeClearAllDataConfirm}>
                 {t('Abbrechen', 'Cancel')}
               </button>
             </div>
@@ -689,17 +713,22 @@ export function SettingsPage(): JSX.Element {
       ) : null}
 
       {importSuccessMessage ? (
-        <div className="form-modal-backdrop" onClick={() => setImportSuccessMessage('')} role="presentation">
-          <article className="card form-modal confirm-modal" onClick={(event) => event.stopPropagation()}>
+        <div
+          className="form-modal-backdrop"
+          onMouseDown={importSuccessBackdropCloseGuard.onBackdropMouseDown}
+          onClick={importSuccessBackdropCloseGuard.onBackdropClick}
+          role="presentation"
+        >
+          <article className="card form-modal confirm-modal" onMouseDownCapture={importSuccessBackdropCloseGuard.onModalMouseDownCapture} onClick={(event) => event.stopPropagation()}>
             <header className="section-header">
               <h2>{t('Import erfolgreich', 'Import successful')}</h2>
-              <button type="button" className="icon-button" onClick={() => setImportSuccessMessage('')} aria-label={t('Popup schließen', 'Close popup')}>
+              <button type="button" className="icon-button" onClick={closeImportSuccess} aria-label={t('Popup schließen', 'Close popup')}>
                 ×
               </button>
             </header>
             <p>{importSuccessMessage}</p>
             <div className="form-actions">
-              <button type="button" className="button button-primary" onClick={() => setImportSuccessMessage('')}>
+              <button type="button" className="button button-primary" onClick={closeImportSuccess}>
                 {t('OK', 'OK')}
               </button>
             </div>

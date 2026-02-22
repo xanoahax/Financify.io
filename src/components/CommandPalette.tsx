@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useGuardedBackdropClose } from '../hooks/useGuardedBackdropClose'
 import type { AppLanguage } from '../types/models'
 import { tx } from '../utils/i18n'
 
@@ -18,6 +19,7 @@ interface CommandPaletteProps {
 export function CommandPalette({ onClose, actions, language }: CommandPaletteProps): JSX.Element {
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
+  const backdropCloseGuard = useGuardedBackdropClose(onClose)
   const t = (de: string, en: string) => tx(language, de, en)
   const filtered = useMemo(
     () => actions.filter((item) => `${item.label} ${item.description}`.toLowerCase().includes(query.trim().toLowerCase())),
@@ -68,8 +70,13 @@ export function CommandPalette({ onClose, actions, language }: CommandPalettePro
   }, [onClose])
 
   return (
-    <div className="palette-backdrop" onClick={onClose} role="presentation">
-      <section className="palette" onClick={(event) => event.stopPropagation()}>
+    <div
+      className="palette-backdrop"
+      onMouseDown={backdropCloseGuard.onBackdropMouseDown}
+      onClick={backdropCloseGuard.onBackdropClick}
+      role="presentation"
+    >
+      <section className="palette" onMouseDownCapture={backdropCloseGuard.onModalMouseDownCapture} onClick={(event) => event.stopPropagation()}>
         <input
           autoFocus
           value={query}

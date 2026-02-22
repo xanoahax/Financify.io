@@ -9,9 +9,10 @@ interface BarChartPoint {
 interface BarChartProps {
   data: BarChartPoint[]
   language?: AppLanguage
+  valueFormatter?: (value: number) => string
 }
 
-export function BarChart({ data, language = 'de' }: BarChartProps): JSX.Element {
+export function BarChart({ data, language = 'de', valueFormatter }: BarChartProps): JSX.Element {
   const t = (de: string, en: string) => tx(language, de, en)
 
   if (data.length === 0) {
@@ -27,7 +28,7 @@ export function BarChart({ data, language = 'de' }: BarChartProps): JSX.Element 
           <div className="bar-track">
             <div className="bar-fill" style={{ width: `${(item.value / max) * 100}%` }} />
           </div>
-          <span className="bar-value">{item.value.toFixed(0)}</span>
+          <span className="bar-value">{valueFormatter ? valueFormatter(item.value) : item.value.toFixed(0)}</span>
         </div>
       ))}
     </div>

@@ -1,8 +1,10 @@
 ﻿import { useEffect, useMemo, useState } from 'react'
 import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
+import { useCallback } from 'react'
 import { CommandPalette, type PaletteAction } from './components/CommandPalette'
 import { QuickAddFab } from './components/QuickAddFab'
 import { ToastHost } from './components/ToastHost'
+import { useGuardedBackdropClose } from './hooks/useGuardedBackdropClose'
 import { DashboardPage } from './pages/DashboardPage'
 import { IncomePage } from './pages/IncomePage'
 import { InterestPage } from './pages/InterestPage'
@@ -12,7 +14,8 @@ import { SubscriptionsPage } from './pages/SubscriptionsPage'
 import { useAppContext } from './state/useAppContext'
 import type { OnboardingSetupInput } from './state/AppContext'
 import { tx } from './utils/i18n'
-import { isGitHubPagesRuntime } from './utils/runtime'
+import { isGitHubPagesRuntime, isTauriRuntime } from './utils/runtime'
+import { normalizeWindowSize, persistWindowSize, readStoredWindowSize } from './utils/windowState'
 
 let startupUpdateCheckTriggered = false
 const DESKTOP_RELEASES_URL = 'https://github.com/xanoahax/Financify.io/releases'
@@ -30,12 +33,14 @@ function OnboardingCard(props: {
   onFinish: (payload: OnboardingSetupInput) => Promise<void>
   canExit: boolean
   onExit: () => void
+  onThemePreviewChange: (theme: OnboardingSetupInput['theme']) => void
 }): JSX.Element {
-  const [profileName, setProfileName] = useState(props.profileName)
-  const [language, setLanguage] = useState(props.defaults.language)
-  const [theme, setTheme] = useState(props.defaults.theme)
-  const [currency, setCurrency] = useState(props.defaults.currency)
-  const [dateFormat, setDateFormat] = useState(props.defaults.dateFormat)
+  const { profileName: initialProfileName, defaults, onFinish, canExit, onExit, onThemePreviewChange } = props
+  const [profileName, setProfileName] = useState(initialProfileName)
+  const [language, setLanguage] = useState(defaults.language)
+  const [theme, setTheme] = useState(defaults.theme)
+  const [currency, setCurrency] = useState(defaults.currency)
+  const [dateFormat, setDateFormat] = useState(defaults.dateFormat)
   const [authMode, setAuthMode] = useState<OnboardingSetupInput['authMode']>('none')
   const [authSecret, setAuthSecret] = useState('')
   const [authSecretConfirm, setAuthSecretConfirm] = useState('')
@@ -43,6 +48,10 @@ function OnboardingCard(props: {
   const [jobRate, setJobRate] = useState('18')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    onThemePreviewChange(theme)
+  }, [onThemePreviewChange, theme])
 
   async function submit(): Promise<void> {
     if (authMode !== 'none' && authSecret !== authSecretConfirm) {
@@ -52,7 +61,7 @@ function OnboardingCard(props: {
     setError('')
     setSubmitting(true)
     try {
-      await props.onFinish({
+      await onFinish({
         profileName,
         language,
         theme,
@@ -74,7 +83,7 @@ function OnboardingCard(props: {
     <article className="card onboarding-card">
       <header className="section-header">
         <h1>{tx(language, 'Einrichtung', 'Setup')}</h1>
-        <p className="muted">{tx(language, `Profil: ${profileName || props.profileName}`, `Profile: ${profileName || props.profileName}`)}</p>
+        <p className="muted">{tx(language, `Profil: ${profileName || initialProfileName}`, `Profile: ${profileName || initialProfileName}`)}</p>
       </header>
       <div className="setting-list">
         <label>
@@ -155,8 +164,8 @@ function OnboardingCard(props: {
       </div>
       {error ? <p className="error-text">{error}</p> : null}
       <div className="form-actions">
-        {props.canExit ? (
-          <button type="button" className="button button-secondary" onClick={props.onExit} disabled={submitting}>
+        {canExit ? (
+          <button type="button" className="button button-secondary" onClick={onExit} disabled={submitting}>
             {tx(language, 'Einrichtung verlassen', 'Leave setup')}
           </button>
         ) : null}
@@ -204,6 +213,12 @@ export default function App(): JSX.Element {
   const navigate = useNavigate()
   const language = settings.language
   const t = (de: string, en: string) => tx(language, de, en)
+  const applyThemePreview = useCallback((theme: OnboardingSetupInput['theme']) => {
+    document.documentElement.dataset.theme = resolveTheme(theme)
+  }, [])
+  const closeDesktopDownloadHint = useCallback(() => setShowDesktopDownloadHint(false), [])
+  const desktopDownloadHintBackdropCloseGuard = useGuardedBackdropClose(closeDesktopDownloadHint)
+  const updatePromptBackdropCloseGuard = useGuardedBackdropClose(dismissUpdatePrompt)
 
   const navItems = [
     { to: '/dashboard', label: t('Übersicht', 'Overview'), icon: '⌂' },
@@ -252,6 +267,56 @@ export default function App(): JSX.Element {
     startupUpdateCheckTriggered = true
     void checkForUpdates()
   }, [checkForUpdates, loading, updatesSupported])
+
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return
+    }
+
+    let isDisposed = false
+    let saveTimer: number | undefined
+
+    async function restoreWindowSize(): Promise<void> {
+      const stored = readStoredWindowSize()
+      if (!stored) {
+        return
+      }
+      try {
+        const [{ getCurrentWindow }, { LogicalSize }] = await Promise.all([import('@tauri-apps/api/window'), import('@tauri-apps/api/dpi')])
+        if (isDisposed) {
+          return
+        }
+        const normalized = normalizeWindowSize(stored)
+        await getCurrentWindow().setSize(new LogicalSize(normalized.width, normalized.height))
+      } catch {
+        // Ignore window restore failures and continue startup.
+      }
+    }
+
+    void restoreWindowSize()
+
+    const persistCurrentSize = (): void => {
+      persistWindowSize({ width: window.innerWidth, height: window.innerHeight })
+    }
+
+    const onResize = (): void => {
+      if (saveTimer !== undefined) {
+        window.clearTimeout(saveTimer)
+      }
+      saveTimer = window.setTimeout(persistCurrentSize, 180)
+    }
+
+    window.addEventListener('resize', onResize)
+
+    return () => {
+      isDisposed = true
+      window.removeEventListener('resize', onResize)
+      if (saveTimer !== undefined) {
+        window.clearTimeout(saveTimer)
+      }
+      persistCurrentSize()
+    }
+  }, [])
 
   const paletteActions: PaletteAction[] = [
     {
@@ -314,6 +379,7 @@ export default function App(): JSX.Element {
             onFinish={completeOnboarding}
             canExit={canExitOnboarding}
             onExit={exitOnboarding}
+            onThemePreviewChange={applyThemePreview}
           />
         </main>
         <ToastHost toasts={toasts} onDismiss={dismissToast} language={language} />
@@ -399,14 +465,23 @@ export default function App(): JSX.Element {
 
         {paletteOpen ? <CommandPalette onClose={() => setPaletteOpen(false)} actions={paletteActions} language={language} /> : null}
         {showDesktopDownloadHint ? (
-          <div className="form-modal-backdrop" onClick={() => setShowDesktopDownloadHint(false)} role="presentation">
-            <article className="card form-modal confirm-modal update-modal" onClick={(event) => event.stopPropagation()}>
+          <div
+            className="form-modal-backdrop"
+            onMouseDown={desktopDownloadHintBackdropCloseGuard.onBackdropMouseDown}
+            onClick={desktopDownloadHintBackdropCloseGuard.onBackdropClick}
+            role="presentation"
+          >
+            <article
+              className="card form-modal confirm-modal update-modal"
+              onMouseDownCapture={desktopDownloadHintBackdropCloseGuard.onModalMouseDownCapture}
+              onClick={(event) => event.stopPropagation()}
+            >
               <header className="section-header">
                 <h2>{t('Desktop-App verfügbar', 'Desktop app available')}</h2>
                 <button
                   type="button"
                   className="icon-button"
-                  onClick={() => setShowDesktopDownloadHint(false)}
+                  onClick={closeDesktopDownloadHint}
                   aria-label={t('Popup schließen', 'Close popup')}
                 >
                   ×
@@ -422,7 +497,7 @@ export default function App(): JSX.Element {
                 <a href={DESKTOP_RELEASES_URL} target="_blank" rel="noreferrer" className="button button-primary">
                   {t('Download', 'Download')}
                 </a>
-                <button type="button" className="button button-secondary" onClick={() => setShowDesktopDownloadHint(false)}>
+                <button type="button" className="button button-secondary" onClick={closeDesktopDownloadHint}>
                   {t('Im Browser fortfahren', 'Continue in browser')}
                 </button>
               </div>
@@ -430,8 +505,17 @@ export default function App(): JSX.Element {
           </div>
         ) : null}
         {updatePrompt ? (
-          <div className="form-modal-backdrop" onClick={dismissUpdatePrompt} role="presentation">
-            <article className="card form-modal confirm-modal update-modal" onClick={(event) => event.stopPropagation()}>
+          <div
+            className="form-modal-backdrop"
+            onMouseDown={updatePromptBackdropCloseGuard.onBackdropMouseDown}
+            onClick={updatePromptBackdropCloseGuard.onBackdropClick}
+            role="presentation"
+          >
+            <article
+              className="card form-modal confirm-modal update-modal"
+              onMouseDownCapture={updatePromptBackdropCloseGuard.onModalMouseDownCapture}
+              onClick={(event) => event.stopPropagation()}
+            >
               <header className="section-header">
                 <h2>{t('Update verfügbar', 'Update available')}</h2>
                 <button

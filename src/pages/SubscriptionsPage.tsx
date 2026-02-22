@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { BarChart } from '../components/BarChart'
 import { DonutChart } from '../components/DonutChart'
 import { LineChart } from '../components/LineChart'
+import { useGuardedBackdropClose } from '../hooks/useGuardedBackdropClose'
 import { useAppContext } from '../state/useAppContext'
 import type { Subscription, SubscriptionInterval, SubscriptionStatus } from '../types/models'
 import { monthLabel, todayString } from '../utils/date'
@@ -16,15 +17,29 @@ type ConfirmActionState =
   | { kind: 'cancel'; id: string; name: string }
   | { kind: 'delete'; id: string; name: string }
 
+const SUBSCRIPTION_CATEGORY_PRESETS = [
+  'Entertainment',
+  'Fitness',
+  'Cloud',
+  'Software',
+  'Insurance',
+  'Work',
+  'Utilities',
+  'Finance',
+  'Education',
+  'Shopping',
+  'General',
+] as const
+
 function parseOptionalNumberInput(value: string): number {
   return value.trim() === '' ? Number.NaN : Number(value)
 }
 
-function buildDefaultForm(categoryDefault: string): SubscriptionFormState {
+function buildDefaultForm(): SubscriptionFormState {
   return {
     name: '',
     provider: '',
-    category: categoryDefault,
+    category: 'General',
     tags: [],
     amount: Number.NaN,
     currency: '',
@@ -79,7 +94,7 @@ function subscriptionMatchesQuery(item: Subscription, query: string): boolean {
 export function SubscriptionsPage(): JSX.Element {
   const { subscriptions, settings, uiState, setUiState, addSubscription, updateSubscription, deleteSubscription } = useAppContext()
   const [searchParams, setSearchParams] = useSearchParams()
-  const [form, setForm] = useState<SubscriptionFormState>(() => buildDefaultForm(tx(settings.language, 'Allgemein', 'General')))
+  const [form, setForm] = useState<SubscriptionFormState>(() => buildDefaultForm())
   const [editId, setEditId] = useState<string | null>(null)
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [sortBy, setSortBy] = useState<'amount' | 'name'>('amount')
@@ -94,9 +109,12 @@ export function SubscriptionsPage(): JSX.Element {
   const closeForm = useCallback((): void => {
     setIsFormOpen(false)
     setEditId(null)
-    setForm(buildDefaultForm(tx(settings.language, 'Allgemein', 'General')))
+    setForm(buildDefaultForm())
     setFormError('')
-  }, [settings.language])
+  }, [])
+  const closeConfirmAction = useCallback(() => setConfirmAction(null), [])
+  const formBackdropCloseGuard = useGuardedBackdropClose(closeForm)
+  const confirmBackdropCloseGuard = useGuardedBackdropClose(closeConfirmAction)
 
   useEffect(() => {
     if (searchParams.get('quickAdd') !== '1') {
@@ -105,7 +123,7 @@ export function SubscriptionsPage(): JSX.Element {
     const frame = window.requestAnimationFrame(() => {
       setIsFormOpen(true)
       setEditId(null)
-      setForm(buildDefaultForm(tx(settings.language, 'Allgemein', 'General')))
+      setForm(buildDefaultForm())
       setFormError('')
       window.requestAnimationFrame(() => nameInputRef.current?.focus())
       const nextParams = new URLSearchParams(searchParams)
@@ -113,7 +131,7 @@ export function SubscriptionsPage(): JSX.Element {
       setSearchParams(nextParams, { replace: true })
     })
     return () => window.cancelAnimationFrame(frame)
-  }, [searchParams, setSearchParams, settings.language])
+  }, [searchParams, setSearchParams])
 
   useEffect(() => {
     if (!isFormOpen && !confirmAction) {
@@ -150,6 +168,15 @@ export function SubscriptionsPage(): JSX.Element {
   }, [categoryFilter, sortBy, statusFilter, subscriptions, uiState.globalSearch])
 
   const categories = useMemo(() => [...new Set(subscriptions.map((item) => item.category))], [subscriptions])
+  const categoryOptions = useMemo(() => {
+    const unique = new Set<string>(SUBSCRIPTION_CATEGORY_PRESETS)
+    for (const category of categories) {
+      if (category.trim()) {
+        unique.add(category)
+      }
+    }
+    return [...unique]
+  }, [categories])
   const totals = useMemo(
     () => ({
       monthly: monthlyTotal(filtered),
@@ -196,7 +223,7 @@ export function SubscriptionsPage(): JSX.Element {
   function openAddForm(): void {
     setIsFormOpen(true)
     setEditId(null)
-    setForm(buildDefaultForm(t('Allgemein', 'General')))
+    setForm(buildDefaultForm())
     setFormError('')
     window.requestAnimationFrame(() => nameInputRef.current?.focus())
   }
@@ -269,8 +296,13 @@ export function SubscriptionsPage(): JSX.Element {
       </div>
 
       {isFormOpen ? (
-        <div className="form-modal-backdrop" onClick={closeForm} role="presentation">
-          <article className="card form-modal" onClick={(event) => event.stopPropagation()}>
+        <div
+          className="form-modal-backdrop"
+          onMouseDown={formBackdropCloseGuard.onBackdropMouseDown}
+          onClick={formBackdropCloseGuard.onBackdropClick}
+          role="presentation"
+        >
+          <article className="card form-modal" onMouseDownCapture={formBackdropCloseGuard.onModalMouseDownCapture} onClick={(event) => event.stopPropagation()}>
             <header className="section-header">
               <h2>{editId ? t('Abo bearbeiten', 'Edit subscription') : t('Abo hinzufügen', 'Add subscription')}</h2>
               <button type="button" className="icon-button" onClick={closeForm} aria-label={t('Popup schließen', 'Close popup')}>
@@ -289,7 +321,13 @@ export function SubscriptionsPage(): JSX.Element {
               </label>
               <label>
                 {t('Kategorie', 'Category')}
-                <input value={form.category} onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))} />
+                <select value={form.category} onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))}>
+                  {categoryOptions.map((category) => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label>
                 {t('Betrag', 'Amount')}
@@ -339,11 +377,16 @@ export function SubscriptionsPage(): JSX.Element {
       ) : null}
 
       {confirmAction ? (
-        <div className="form-modal-backdrop" onClick={() => setConfirmAction(null)} role="presentation">
-          <article className="card form-modal confirm-modal" onClick={(event) => event.stopPropagation()}>
+        <div
+          className="form-modal-backdrop"
+          onMouseDown={confirmBackdropCloseGuard.onBackdropMouseDown}
+          onClick={confirmBackdropCloseGuard.onBackdropClick}
+          role="presentation"
+        >
+          <article className="card form-modal confirm-modal" onMouseDownCapture={confirmBackdropCloseGuard.onModalMouseDownCapture} onClick={(event) => event.stopPropagation()}>
             <header className="section-header">
               <h2>{confirmAction.kind === 'cancel' ? t('Abo kündigen?', 'Cancel subscription?') : t('Abo löschen?', 'Delete subscription?')}</h2>
-              <button type="button" className="icon-button" onClick={() => setConfirmAction(null)} aria-label={t('Popup schließen', 'Close popup')}>
+              <button type="button" className="icon-button" onClick={closeConfirmAction} aria-label={t('Popup schließen', 'Close popup')}>
                 x
               </button>
             </header>
@@ -360,7 +403,7 @@ export function SubscriptionsPage(): JSX.Element {
               >
                 {confirmAction.kind === 'cancel' ? t('Kündigen', 'Cancel subscription') : t('Löschen', 'Delete')}
               </button>
-              <button type="button" className="button button-secondary" onClick={() => setConfirmAction(null)}>
+              <button type="button" className="button button-secondary" onClick={closeConfirmAction}>
                 {t('Abbrechen', 'Cancel')}
               </button>
             </div>
@@ -371,7 +414,11 @@ export function SubscriptionsPage(): JSX.Element {
       <div className="three-column">
         <article className="card">
           <h2>{t('Top-Kosten', 'Top costs')}</h2>
-          <BarChart data={totals.top.map((item) => ({ label: item.name, value: monthlyEquivalent(item) }))} language={settings.language} />
+          <BarChart
+            data={totals.top.map((item) => ({ label: item.name, value: monthlyEquivalent(item) }))}
+            language={settings.language}
+            valueFormatter={(value) => formatMoney(value, settings.currency, settings.privacyHideAmounts)}
+          />
         </article>
         <article className="card">
           <h2>{t('Kategorienverteilung', 'Category breakdown')}</h2>

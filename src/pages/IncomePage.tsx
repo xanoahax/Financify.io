@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { BarChart } from '../components/BarChart'
 import { DonutChart } from '../components/DonutChart'
 import { LineChart } from '../components/LineChart'
+import { useGuardedBackdropClose } from '../hooks/useGuardedBackdropClose'
 import { useAppContext } from '../state/useAppContext'
 import type { IncomeEntry } from '../types/models'
 import { addDays, endOfMonth, endOfYear, formatDateByPattern, monthLabel, monthKey, startOfMonth, startOfYear, todayString } from '../utils/date'
@@ -115,6 +116,9 @@ export function IncomePage(): JSX.Element {
     setTagInput('')
     setFormError('')
   }, [resolvedDefaultShiftJobId, settings.language])
+  const closeConfirmDelete = useCallback(() => setConfirmDelete(null), [])
+  const formBackdropCloseGuard = useGuardedBackdropClose(closeForm)
+  const confirmBackdropCloseGuard = useGuardedBackdropClose(closeConfirmDelete)
 
   useEffect(() => {
     if (searchParams.get('quickAdd') !== '1') {
@@ -414,8 +418,13 @@ export function IncomePage(): JSX.Element {
       </div>
 
       {isFormOpen ? (
-        <div className="form-modal-backdrop" onClick={closeForm} role="presentation">
-          <article className="card form-modal" onClick={(event) => event.stopPropagation()}>
+        <div
+          className="form-modal-backdrop"
+          onMouseDown={formBackdropCloseGuard.onBackdropMouseDown}
+          onClick={formBackdropCloseGuard.onBackdropClick}
+          role="presentation"
+        >
+          <article className="card form-modal" onMouseDownCapture={formBackdropCloseGuard.onModalMouseDownCapture} onClick={(event) => event.stopPropagation()}>
             <header className="section-header">
               <h2>
                 {editId ? t('Einkommen bearbeiten', 'Edit income') : formMode === 'job-shift' ? t('Dienst loggen', 'Log shift') : t('Einkommen hinzufügen', 'Add income')}
@@ -560,11 +569,16 @@ export function IncomePage(): JSX.Element {
       ) : null}
 
       {confirmDelete ? (
-        <div className="form-modal-backdrop" onClick={() => setConfirmDelete(null)} role="presentation">
-          <article className="card form-modal confirm-modal" onClick={(event) => event.stopPropagation()}>
+        <div
+          className="form-modal-backdrop"
+          onMouseDown={confirmBackdropCloseGuard.onBackdropMouseDown}
+          onClick={confirmBackdropCloseGuard.onBackdropClick}
+          role="presentation"
+        >
+          <article className="card form-modal confirm-modal" onMouseDownCapture={confirmBackdropCloseGuard.onModalMouseDownCapture} onClick={(event) => event.stopPropagation()}>
             <header className="section-header">
               <h2>{t('Einkommenseintrag löschen?', 'Delete income entry?')}</h2>
-              <button type="button" className="icon-button" onClick={() => setConfirmDelete(null)} aria-label={t('Popup schließen', 'Close popup')}>
+              <button type="button" className="icon-button" onClick={closeConfirmDelete} aria-label={t('Popup schließen', 'Close popup')}>
                 x
               </button>
             </header>
@@ -576,7 +590,7 @@ export function IncomePage(): JSX.Element {
               <button type="button" className="button button-danger" onClick={() => void handleDeleteConfirmed()}>
                 {t('Löschen', 'Delete')}
               </button>
-              <button type="button" className="button button-secondary" onClick={() => setConfirmDelete(null)}>
+              <button type="button" className="button button-secondary" onClick={closeConfirmDelete}>
                 {t('Abbrechen', 'Cancel')}
               </button>
             </div>

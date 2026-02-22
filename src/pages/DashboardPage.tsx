@@ -69,7 +69,11 @@ export function DashboardPage(): JSX.Element {
           <h2>{t('Teuerste Abos', 'Most expensive subscriptions')}</h2>
         </header>
         {overview.top.length === 0 ? <p className="empty-inline">{t('Noch keine Abos vorhanden.', 'No subscriptions yet.')}</p> : null}
-        <BarChart data={overview.top.map((item) => ({ label: item.name, value: item.amount }))} language={settings.language} />
+        <BarChart
+          data={overview.top.map((item) => ({ label: item.name, value: item.amount }))}
+          language={settings.language}
+          valueFormatter={(value) => formatMoney(value, settings.currency, settings.privacyHideAmounts)}
+        />
       </article>
 
       <article className="card">

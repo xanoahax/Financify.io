@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { LineChart } from '../components/LineChart'
+import { useGuardedBackdropClose } from '../hooks/useGuardedBackdropClose'
 import { useAppContext } from '../state/useAppContext'
 import type { InterestScenarioInput } from '../types/models'
 import { formatMoney, toPercent } from '../utils/format'
@@ -31,6 +32,8 @@ export function InterestPage(): JSX.Element {
   const [saveError, setSaveError] = useState('')
   const [confirmDeleteScenario, setConfirmDeleteScenario] = useState<{ id: string; name: string } | null>(null)
   const t = (de: string, en: string) => tx(settings.language, de, en)
+  const closeConfirmDeleteScenario = () => setConfirmDeleteScenario(null)
+  const confirmBackdropCloseGuard = useGuardedBackdropClose(closeConfirmDeleteScenario)
 
   const result = useMemo(() => calculateInterestScenario(input), [input])
   const chartData = result.timeline.map((item) => ({ label: `M${item.month}`, value: item.balance }))
@@ -283,11 +286,16 @@ export function InterestPage(): JSX.Element {
       </article>
 
       {confirmDeleteScenario ? (
-        <div className="form-modal-backdrop" onClick={() => setConfirmDeleteScenario(null)} role="presentation">
-          <article className="card form-modal confirm-modal" onClick={(event) => event.stopPropagation()}>
+        <div
+          className="form-modal-backdrop"
+          onMouseDown={confirmBackdropCloseGuard.onBackdropMouseDown}
+          onClick={confirmBackdropCloseGuard.onBackdropClick}
+          role="presentation"
+        >
+          <article className="card form-modal confirm-modal" onMouseDownCapture={confirmBackdropCloseGuard.onModalMouseDownCapture} onClick={(event) => event.stopPropagation()}>
             <header className="section-header">
               <h2>{t('Szenario löschen?', 'Delete scenario?')}</h2>
-              <button type="button" className="icon-button" onClick={() => setConfirmDeleteScenario(null)} aria-label={t('Popup schließen', 'Close popup')}>
+              <button type="button" className="icon-button" onClick={closeConfirmDeleteScenario} aria-label={t('Popup schließen', 'Close popup')}>
                 x
               </button>
             </header>
@@ -296,7 +304,7 @@ export function InterestPage(): JSX.Element {
               <button type="button" className="button button-danger" onClick={() => void handleDeleteScenarioConfirmed()}>
                 {t('Löschen', 'Delete')}
               </button>
-              <button type="button" className="button button-secondary" onClick={() => setConfirmDeleteScenario(null)}>
+              <button type="button" className="button button-secondary" onClick={closeConfirmDeleteScenario}>
                 {t('Abbrechen', 'Cancel')}
               </button>
             </div>
