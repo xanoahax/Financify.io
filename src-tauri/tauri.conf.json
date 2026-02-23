@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "financify.io",
-  "version": "0.9.52",
+  "version": "0.9.53",
   "identifier": "io.financify.desktop",
   "build": {
     "frontendDist": "../dist",
@@ -12,9 +12,12 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "financify.io",
-        "width": 800,
-        "height": 600,
+        "width": 1200,
+        "height": 760,
+        "minWidth": 900,
+        "minHeight": 620,
         "resizable": true,
         "fullscreen": false
       }

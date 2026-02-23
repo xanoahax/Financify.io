@@ -3,6 +3,13 @@
 All notable changes for desktop releases are documented here.  
 Each release must have a matching section (`## vX.Y.Z`) so GitHub release notes and the in-app update dialog stay in sync.
 
+## v0.9.53
+- Kuss Bro: Desktop start behavior fixed for everyday use.
+- Window size/position persistence moved to native Tauri window-state plugin for reliable restore on next launch.
+- Enforced single-instance desktop runtime; launching again now focuses the running app instead of opening a parallel instance.
+- Main window config refined (`label: main`, larger defaults, min size) to prevent tiny/square startup windows.
+- Removed legacy frontend window-size workaround to avoid conflicts with native window-state handling.
+
 ## v0.9.52
 - Kuss Bro: Erstes Usertesting in zentrale UX-Fixes umgesetzt.
 - Desktop-App merkt sich jetzt Fenstergröße und startet mit der zuletzt gespeicherten Größe.

@@ -1,6 +1,5 @@
-﻿import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
-import { useCallback } from 'react'
 import { CommandPalette, type PaletteAction } from './components/CommandPalette'
 import { QuickAddFab } from './components/QuickAddFab'
 import { ToastHost } from './components/ToastHost'
@@ -14,8 +13,7 @@ import { SubscriptionsPage } from './pages/SubscriptionsPage'
 import { useAppContext } from './state/useAppContext'
 import type { OnboardingSetupInput } from './state/AppContext'
 import { tx } from './utils/i18n'
-import { isGitHubPagesRuntime, isTauriRuntime } from './utils/runtime'
-import { normalizeWindowSize, persistWindowSize, readStoredWindowSize } from './utils/windowState'
+import { isGitHubPagesRuntime } from './utils/runtime'
 
 let startupUpdateCheckTriggered = false
 const DESKTOP_RELEASES_URL = 'https://github.com/xanoahax/Financify.io/releases'
@@ -221,12 +219,12 @@ export default function App(): JSX.Element {
   const updatePromptBackdropCloseGuard = useGuardedBackdropClose(dismissUpdatePrompt)
 
   const navItems = [
-    { to: '/dashboard', label: t('Übersicht', 'Overview'), icon: '⌂' },
+    { to: '/dashboard', label: t('Übersicht', 'Overview'), icon: '¦' },
     { to: '/income', label: t('Einkommen', 'Income'), icon: '¤' },
-    { to: '/subscriptions', label: t('Abo-Tracker', 'Subscription Tracker'), icon: '↻' },
+    { to: '/subscriptions', label: t('Abo-Tracker', 'Subscription Tracker'), icon: '?' },
     { to: '/interest', label: t('Zinsrechner', 'Interest Calculator'), icon: '%' },
-    { to: '/stats', label: t('Statistiken', 'Statistics'), icon: '▦' },
-    { to: '/settings', label: t('Einstellungen', 'Settings'), icon: '⚙' },
+    { to: '/stats', label: t('Statistiken', 'Statistics'), icon: '?' },
+    { to: '/settings', label: t('Einstellungen', 'Settings'), icon: '?' },
   ]
 
   useEffect(() => {
@@ -267,56 +265,6 @@ export default function App(): JSX.Element {
     startupUpdateCheckTriggered = true
     void checkForUpdates()
   }, [checkForUpdates, loading, updatesSupported])
-
-  useEffect(() => {
-    if (!isTauriRuntime()) {
-      return
-    }
-
-    let isDisposed = false
-    let saveTimer: number | undefined
-
-    async function restoreWindowSize(): Promise<void> {
-      const stored = readStoredWindowSize()
-      if (!stored) {
-        return
-      }
-      try {
-        const [{ getCurrentWindow }, { LogicalSize }] = await Promise.all([import('@tauri-apps/api/window'), import('@tauri-apps/api/dpi')])
-        if (isDisposed) {
-          return
-        }
-        const normalized = normalizeWindowSize(stored)
-        await getCurrentWindow().setSize(new LogicalSize(normalized.width, normalized.height))
-      } catch {
-        // Ignore window restore failures and continue startup.
-      }
-    }
-
-    void restoreWindowSize()
-
-    const persistCurrentSize = (): void => {
-      persistWindowSize({ width: window.innerWidth, height: window.innerHeight })
-    }
-
-    const onResize = (): void => {
-      if (saveTimer !== undefined) {
-        window.clearTimeout(saveTimer)
-      }
-      saveTimer = window.setTimeout(persistCurrentSize, 180)
-    }
-
-    window.addEventListener('resize', onResize)
-
-    return () => {
-      isDisposed = true
-      window.removeEventListener('resize', onResize)
-      if (saveTimer !== undefined) {
-        window.clearTimeout(saveTimer)
-      }
-      persistCurrentSize()
-    }
-  }, [])
 
   const paletteActions: PaletteAction[] = [
     {
@@ -560,3 +508,5 @@ export default function App(): JSX.Element {
     </>
   )
 }
+
+
