@@ -439,11 +439,12 @@ td small {
 }
 
 .nav-icon {
-  width: 18px;
+  width: 20px;
   text-align: center;
   font-size: 1.18rem;
   line-height: 1;
   flex-shrink: 0;
+  font-family: 'Segoe UI Symbol', 'Apple Symbols', 'Noto Sans Symbols', 'Noto Color Emoji', sans-serif;
 }
 
 .nav-label {

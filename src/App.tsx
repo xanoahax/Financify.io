@@ -219,12 +219,12 @@ export default function App(): JSX.Element {
   const updatePromptBackdropCloseGuard = useGuardedBackdropClose(dismissUpdatePrompt)
 
   const navItems = [
-    { to: '/dashboard', label: t('Übersicht', 'Overview'), icon: '¦' },
-    { to: '/income', label: t('Einkommen', 'Income'), icon: '¤' },
-    { to: '/subscriptions', label: t('Abo-Tracker', 'Subscription Tracker'), icon: '?' },
-    { to: '/interest', label: t('Zinsrechner', 'Interest Calculator'), icon: '%' },
-    { to: '/stats', label: t('Statistiken', 'Statistics'), icon: '?' },
-    { to: '/settings', label: t('Einstellungen', 'Settings'), icon: '?' },
+    { to: '/dashboard', label: t('\u00dcbersicht', 'Overview'), icon: '\u2302' },
+    { to: '/income', label: t('Einkommen', 'Income'), icon: '\u20ac' },
+    { to: '/subscriptions', label: t('Abo-Tracker', 'Subscription Tracker'), icon: '\u21bb' },
+    { to: '/interest', label: t('Zinsrechner', 'Interest Calculator'), icon: '\u2211' },
+    { to: '/stats', label: t('Statistiken', 'Statistics'), icon: '\u2197' },
+    { to: '/settings', label: t('Einstellungen', 'Settings'), icon: '\u2699' },
   ]
 
   useEffect(() => {

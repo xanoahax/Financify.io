@@ -3,6 +3,11 @@
 All notable changes for desktop releases are documented here.  
 Each release must have a matching section (`## vX.Y.Z`) so GitHub release notes and the in-app update dialog stay in sync.
 
+## v0.9.54
+- Fixed broken sidebar icons caused by invalid symbol characters.
+- Replaced sidebar symbols with stable Unicode icons for all navigation items.
+- Improved sidebar icon rendering with symbol font fallbacks and slightly better icon spacing.
+
 ## v0.9.53
 - Kuss Bro: Desktop start behavior fixed for everyday use.
 - Window size/position persistence moved to native Tauri window-state plugin for reliable restore on next launch.
