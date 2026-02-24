@@ -6,7 +6,7 @@ import { useAppContext } from '../state/useAppContext'
 import type { IncomeEntry } from '../types/models'
 import { addDays, formatDateByPattern, monthLabel, parseDate, todayString } from '../utils/date'
 import { formatMoney, toPercent } from '../utils/format'
-import { incomeByMonth, materializeIncomeEntriesForRange, sourceBreakdown, sumIncome } from '../utils/income'
+import { buildFixedSalaryIncomeTemplateEntries, incomeByMonth, materializeIncomeEntriesForRange, sourceBreakdown, sumIncome } from '../utils/income'
 import { tx } from '../utils/i18n'
 import { categoryBreakdown, monthlyTotal } from '../utils/subscription'
 
@@ -54,10 +54,11 @@ export function StatsPage(): JSX.Element {
   const rangeDays = rangeLengthDays(range.start, range.end)
 
   const data = useMemo(() => {
-    const incomeInRange = materializeIncomeEntriesForRange(incomeEntries, range.start, range.end)
+    const allIncomeEntries = [...incomeEntries, ...buildFixedSalaryIncomeTemplateEntries(settings.shiftJobs)]
+    const incomeInRange = materializeIncomeEntriesForRange(allIncomeEntries, range.start, range.end)
     const previousStart = addDays(range.start, -rangeDays)
     const previousEnd = addDays(range.end, -rangeDays)
-    const previousIncome = materializeIncomeEntriesForRange(incomeEntries, previousStart, previousEnd)
+    const previousIncome = materializeIncomeEntriesForRange(allIncomeEntries, previousStart, previousEnd)
 
     const activeSubscriptions = subscriptions.filter((item) => item.status === 'active' || item.status === 'paused')
     const monthlySpend = monthlyTotal(activeSubscriptions)
@@ -78,7 +79,7 @@ export function StatsPage(): JSX.Element {
       categorySeries: categoryBreakdown(activeSubscriptions),
       previousRange: { start: previousStart, end: previousEnd },
     }
-  }, [incomeEntries, monthLocale, range.end, range.start, rangeDays, settings.language, subscriptions])
+  }, [incomeEntries, monthLocale, range.end, range.start, rangeDays, settings.language, settings.shiftJobs, subscriptions])
 
   return (
     <section className="page">

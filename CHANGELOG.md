@@ -3,6 +3,16 @@
 All notable changes for desktop releases are documented here.  
 Each release must have a matching section (`## vX.Y.Z`) so GitHub release notes and the in-app update dialog stay in sync.
 
+## v0.9.62
+- Improved profile UX and reliability across login, onboarding, and settings.
+- Onboarding now lets users choose job type (casual vs fixed) and saves the selected job setup correctly.
+- Add Income modal source is now a dropdown with typical income source presets.
+- Login screen now always shows a `New profile` action again.
+- Fixed profile rename persistence in Edit Profile (name changes are now reliably saved).
+- Improved long-name handling in profile switchers and login profile tiles (stable layout + ellipsis).
+- Refined date input theming logic so calendar controls adapt by theme.
+- Internal state-flow cleanup to reduce race-condition risks in profile/update flows.
+
 ## v0.9.61
 - Fixed desktop auto-update checks for older app versions by restoring a valid updater manifest (`latest.json`) on the newest release.
 - No feature changes in this patch; release exists to recover updater compatibility.

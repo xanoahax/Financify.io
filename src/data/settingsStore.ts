@@ -1,4 +1,4 @@
-import type { Settings, ShiftJobConfig, UiState } from '../types/models'
+import type { EmploymentType, FixedPayInterval, Settings, ShiftJobConfig, UiState } from '../types/models'
 import {
   getBackgroundImageStorageKey,
   getSettingsStorageKey,
@@ -44,23 +44,72 @@ function parseJson<T>(raw: string | null, fallback: T): T {
   }
 }
 
+function todayDateString(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function normalizeEmploymentType(raw: unknown): EmploymentType {
+  return raw === 'fixed' ? 'fixed' : 'casual'
+}
+
+function normalizeFixedPayInterval(raw: unknown): FixedPayInterval {
+  if (raw === 'weekly' || raw === 'biweekly' || raw === 'monthly') {
+    return raw
+  }
+  return 'monthly'
+}
+
+function isDateString(raw: unknown): raw is string {
+  return typeof raw === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw)
+}
+
 function normalizeShiftJobs(raw: unknown, legacyRate: unknown): ShiftJobConfig[] {
   const rows = Array.isArray(raw) ? raw : []
-  const jobs = rows
-    .map((row) => {
+  const jobs = rows.reduce<ShiftJobConfig[]>((acc, row) => {
       if (!row || typeof row !== 'object') {
-        return null
+        return acc
       }
-      const source = row as { id?: unknown; name?: unknown; hourlyRate?: unknown }
+      const source = row as {
+        id?: unknown
+        name?: unknown
+        employmentType?: unknown
+        hourlyRate?: unknown
+        salaryAmount?: unknown
+        fixedPayInterval?: unknown
+        has13thSalary?: unknown
+        has14thSalary?: unknown
+        startDate?: unknown
+      }
       const name = typeof source.name === 'string' ? source.name.trim() : ''
-      const hourlyRate = Number(source.hourlyRate)
-      if (!name || !Number.isFinite(hourlyRate) || hourlyRate <= 0) {
-        return null
+      if (!name) {
+        return acc
       }
+      const inferredType = normalizeEmploymentType(source.employmentType)
       const id = typeof source.id === 'string' && source.id.trim() ? source.id : `job-${crypto.randomUUID()}`
-      return { id, name, hourlyRate }
-    })
-    .filter((job): job is ShiftJobConfig => job !== null)
+      if (inferredType === 'fixed') {
+        const salaryAmount = Number(source.salaryAmount)
+        if (!Number.isFinite(salaryAmount) || salaryAmount <= 0) {
+          return acc
+        }
+        acc.push({
+          id,
+          name,
+          employmentType: 'fixed' as const,
+          salaryAmount,
+          fixedPayInterval: normalizeFixedPayInterval(source.fixedPayInterval),
+          has13thSalary: Boolean(source.has13thSalary),
+          has14thSalary: Boolean(source.has14thSalary),
+          startDate: isDateString(source.startDate) ? source.startDate : todayDateString(),
+        })
+        return acc
+      }
+      const hourlyRate = Number(source.hourlyRate)
+      if (!Number.isFinite(hourlyRate) || hourlyRate <= 0) {
+        return acc
+      }
+      acc.push({ id, name, employmentType: 'casual' as const, hourlyRate })
+      return acc
+    }, [])
 
   if (jobs.length > 0) {
     return jobs
@@ -68,7 +117,7 @@ function normalizeShiftJobs(raw: unknown, legacyRate: unknown): ShiftJobConfig[]
 
   const migratedRate = Number(legacyRate)
   if (Number.isFinite(migratedRate) && migratedRate > 0) {
-    return [{ id: LEGACY_MIGRATION_SHIFT_JOB_ID, name: 'FoodAffairs', hourlyRate: migratedRate }]
+    return [{ id: LEGACY_MIGRATION_SHIFT_JOB_ID, name: 'FoodAffairs', employmentType: 'casual', hourlyRate: migratedRate }]
   }
   return []
 }
@@ -87,10 +136,11 @@ export function loadSettings(profileId: string): Settings {
     defaultSettings as unknown as Record<string, unknown>,
   )
   const shiftJobs = normalizeShiftJobs(parsed.shiftJobs, parsed.foodAffairsHourlyRate)
+  const casualJobs = shiftJobs.filter((job) => job.employmentType === 'casual')
   const defaultShiftJobId =
-    typeof parsed.defaultShiftJobId === 'string' && shiftJobs.some((job) => job.id === parsed.defaultShiftJobId)
+    typeof parsed.defaultShiftJobId === 'string' && casualJobs.some((job) => job.id === parsed.defaultShiftJobId)
       ? parsed.defaultShiftJobId
-      : shiftJobs[0]?.id ?? ''
+      : casualJobs[0]?.id ?? ''
 
   return {
     ...defaultSettings,

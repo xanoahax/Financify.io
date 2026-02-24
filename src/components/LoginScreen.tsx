@@ -12,6 +12,7 @@ interface LoginScreenProps {
   unlockError: string
   unlocking: boolean
   onSelectProfile: (profileId: string) => void
+  onCreateProfile: () => void
   onUnlockSecretChange: (value: string) => void
   onUnlockSubmit: (event: FormEvent) => Promise<void>
 }
@@ -26,6 +27,7 @@ export function LoginScreen(props: LoginScreenProps): JSX.Element {
     unlockError,
     unlocking,
     onSelectProfile,
+    onCreateProfile,
     onUnlockSecretChange,
     onUnlockSubmit,
   } = props
@@ -70,6 +72,7 @@ export function LoginScreen(props: LoginScreenProps): JSX.Element {
                     onSelectProfile(profile.id)
                   }}
                   aria-selected={selected}
+                  title={profile.name}
                 >
                   <ProfileAvatar profile={profile} size={86} />
                   <strong>{profile.name}</strong>
@@ -110,25 +113,25 @@ export function LoginScreen(props: LoginScreenProps): JSX.Element {
         ) : null}
 
       </article>
-      {pendingProfile ? (
-        <div className="login-profile-create-row" role="listbox" aria-label={t('Profile setup', 'Profile setup')}>
-          <button
-            key={pendingProfile.id}
-            type="button"
-            className={`login-profile-pill login-profile-create ${pendingProfile.id === activeProfileId ? 'active' : ''}`}
-            onClick={() => {
+      <div className="login-profile-create-row" role="group" aria-label={t('Profile actions', 'Profile actions')}>
+        <button
+          type="button"
+          className={`login-profile-pill login-profile-create ${pendingProfile?.id === activeProfileId ? 'active' : ''}`}
+          onClick={() => {
+            if (pendingProfile) {
               setHasSelectedProfile(true)
               onSelectProfile(pendingProfile.id)
-            }}
-            aria-selected={pendingProfile.id === activeProfileId}
-          >
-            <span className="login-plus-avatar" aria-hidden="true">
-              +
-            </span>
-            <strong>{t('Neues Profil', 'New profile')}</strong>
-          </button>
-        </div>
-      ) : null}
+              return
+            }
+            onCreateProfile()
+          }}
+        >
+          <span className="login-plus-avatar" aria-hidden="true">
+            +
+          </span>
+          <strong>{t('Neues Profil', 'New profile')}</strong>
+        </button>
+      </div>
     </main>
   )
 }

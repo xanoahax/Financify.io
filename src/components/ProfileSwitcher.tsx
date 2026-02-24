@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { UserProfile } from '../types/models'
 import { tx } from '../utils/i18n'
 import { ProfileAvatar } from './ProfileAvatar'
@@ -9,25 +9,26 @@ interface ProfileSwitcherProps {
   activeProfile: UserProfile | null
   language: 'de' | 'en'
   onSwitchProfile: (profileId: string) => void
+  onCreateProfile?: () => void
+  onLockProfile?: () => void
   className?: string
   autoWidth?: boolean
 }
 
 export function ProfileSwitcher(props: ProfileSwitcherProps): JSX.Element {
-  const { profiles, activeProfileId, activeProfile, language, onSwitchProfile, className, autoWidth = false } = props
+  const { profiles, activeProfileId, activeProfile, language, onSwitchProfile, onCreateProfile, onLockProfile, className, autoWidth = false } = props
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
-  const t = (de: string, en: string) => tx(language, de, en)
+  const t = useCallback((de: string, en: string) => tx(language, de, en), [language])
+  const MAX_SWITCHER_WIDTH = 340
+  const MIN_SWITCHER_WIDTH = 132
 
   const switcherWidth = useMemo(() => {
     if (typeof document === 'undefined') {
       return undefined
     }
-    const displayNames = profiles.map((profile) =>
-      profile.onboardingCompleted ? profile.name : t('Neues Profil', 'New profile'),
-    )
     const fallbackName = activeProfile?.onboardingCompleted ? activeProfile.name : t('Neues Profil', 'New profile')
-    const names = [...displayNames, fallbackName, t('Profil', 'Profile')].map((name) => name.trim()).filter(Boolean)
+    const names = [fallbackName, t('Profil', 'Profile')].map((name) => name.trim()).filter(Boolean)
     if (names.length === 0) {
       return undefined
     }
@@ -40,8 +41,9 @@ export function ProfileSwitcher(props: ProfileSwitcherProps): JSX.Element {
     context.font = `${bodyStyle.fontWeight} ${bodyStyle.fontSize} ${bodyStyle.fontFamily}`
     const maxTextWidth = names.reduce((max, name) => Math.max(max, context.measureText(name).width), 0)
     const controlChromeWidth = 66
-    return Math.ceil(maxTextWidth + controlChromeWidth)
-  }, [activeProfile, profiles, t])
+    return Math.min(MAX_SWITCHER_WIDTH, Math.max(MIN_SWITCHER_WIDTH, Math.ceil(maxTextWidth + controlChromeWidth)))
+  }, [activeProfile, t])
+  const hasPendingProfile = useMemo(() => profiles.some((profile) => !profile.onboardingCompleted), [profiles])
 
   useEffect(() => {
     if (!menuOpen) {
@@ -65,10 +67,6 @@ export function ProfileSwitcher(props: ProfileSwitcherProps): JSX.Element {
     }
   }, [menuOpen])
 
-  useEffect(() => {
-    setMenuOpen(false)
-  }, [activeProfileId])
-
   return (
     <div
       className={`profile-switcher ${className ?? ''}`.trim()}
@@ -82,6 +80,7 @@ export function ProfileSwitcher(props: ProfileSwitcherProps): JSX.Element {
         aria-label={t('Profil wechseln', 'Switch profile')}
         aria-haspopup="listbox"
         aria-expanded={menuOpen}
+        title={activeProfile?.onboardingCompleted ? activeProfile.name : t('Neues Profil', 'New profile')}
       >
         {activeProfile ? (
           activeProfile.onboardingCompleted ? (
@@ -114,6 +113,7 @@ export function ProfileSwitcher(props: ProfileSwitcherProps): JSX.Element {
                   onSwitchProfile(profile.id)
                 }}
                 aria-selected={selected}
+                title={isPendingProfile ? t('Neues Profil', 'New profile') : profile.name}
               >
                 {isPendingProfile ? (
                   <span className="profile-switcher-plus" aria-hidden="true">
@@ -126,9 +126,38 @@ export function ProfileSwitcher(props: ProfileSwitcherProps): JSX.Element {
               </button>
             )
           })}
+          {onCreateProfile && !hasPendingProfile ? (
+            <button
+              type="button"
+              className="profile-switcher-option profile-switcher-option-create"
+              onClick={() => {
+                setMenuOpen(false)
+                onCreateProfile()
+              }}
+            >
+              <span className="profile-switcher-plus" aria-hidden="true">
+                +
+              </span>
+              <span className="profile-switcher-option-name">{t('Neues Profil', 'New profile')}</span>
+            </button>
+          ) : null}
+          {onLockProfile ? (
+            <button
+              type="button"
+              className="profile-switcher-option profile-switcher-option-logout"
+              onClick={() => {
+                setMenuOpen(false)
+                onLockProfile()
+              }}
+            >
+              <span className="profile-switcher-logout" aria-hidden="true">
+                ↩
+              </span>
+              <span className="profile-switcher-option-name">{t('Abmelden', 'Log out')}</span>
+            </button>
+          ) : null}
         </div>
       ) : null}
     </div>
   )
 }
-

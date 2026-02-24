@@ -8,7 +8,7 @@ import { useAppContext } from '../state/useAppContext'
 import type { IncomeEntry } from '../types/models'
 import { addDays, endOfMonth, endOfYear, formatDateByPattern, monthLabel, monthKey, startOfMonth, startOfYear, todayString } from '../utils/date'
 import { formatMoney, getCurrencySymbol, toPercent } from '../utils/format'
-import { incomeByMonth, materializeIncomeEntriesForRange, monthOverMonthChange, monthStats, sourceBreakdown, sumIncome } from '../utils/income'
+import { buildFixedSalaryIncomeTemplateEntries, incomeByMonth, materializeIncomeEntriesForRange, monthOverMonthChange, monthStats, sourceBreakdown, sumIncome } from '../utils/income'
 import { tx } from '../utils/i18n'
 import { calculateShiftIncome } from '../utils/shiftIncome'
 
@@ -27,6 +27,41 @@ interface IncomeDeleteConfirmState {
   source: string
   date: string
 }
+
+const INCOME_SOURCE_PRESETS = {
+  de: [
+    'Gehalt',
+    'Freelance',
+    'Nebenjob',
+    'Bonus',
+    'Trinkgeld',
+    'Provision',
+    'Investitionen',
+    'Dividenden',
+    'Zinsen',
+    'Vermietung',
+    'R\u00fcckerstattung',
+    'Geschenk',
+    'Taschengeld',
+    'Sonstiges',
+  ],
+  en: [
+    'Salary',
+    'Freelance',
+    'Side job',
+    'Bonus',
+    'Tips',
+    'Commission',
+    'Investments',
+    'Dividends',
+    'Interest',
+    'Rental income',
+    'Refund',
+    'Gift',
+    'Allowance',
+    'Other',
+  ],
+} as const
 
 function parseTags(input: string): string[] {
   return input
@@ -83,7 +118,9 @@ function buildDefaultShiftForm(defaultJobId: string): ShiftLogFormState {
 
 export function IncomePage(): JSX.Element {
   const { incomeEntries, settings, uiState, setUiState, addIncomeEntry, updateIncomeEntry, deleteIncomeEntry } = useAppContext()
-  const shiftJobs = settings.shiftJobs
+  const shiftJobs = settings.shiftJobs.filter((job) => job.employmentType === 'casual')
+  const fixedSalaryTemplateEntries = useMemo(() => buildFixedSalaryIncomeTemplateEntries(settings.shiftJobs), [settings.shiftJobs])
+  const analyticEntries = useMemo(() => [...incomeEntries, ...fixedSalaryTemplateEntries], [fixedSalaryTemplateEntries, incomeEntries])
   const resolvedDefaultShiftJobId = shiftJobs.some((job) => job.id === settings.defaultShiftJobId) ? settings.defaultShiftJobId : (shiftJobs[0]?.id ?? '')
   const [searchParams, setSearchParams] = useSearchParams()
   const [form, setForm] = useState<IncomeFormState>(() => buildDefaultForm(tx(settings.language, 'Gehalt', 'Salary')))
@@ -102,6 +139,37 @@ export function IncomePage(): JSX.Element {
   const t = (de: string, en: string) => tx(settings.language, de, en)
   const monthLocale = settings.language === 'de' ? 'de-DE' : 'en-US'
   const currencySymbol = getCurrencySymbol(settings.currency)
+  const existingManualSources = useMemo(() => {
+    const unique = new Set<string>()
+    for (const entry of incomeEntries) {
+      if (isJobShiftIncomeEntry(entry)) {
+        continue
+      }
+      const source = entry.source.trim()
+      if (source) {
+        unique.add(source)
+      }
+    }
+    return [...unique]
+  }, [incomeEntries])
+  const manualSourceOptions = useMemo(() => {
+    const presets = settings.language === 'de' ? INCOME_SOURCE_PRESETS.de : INCOME_SOURCE_PRESETS.en
+    const unique = new Set<string>(presets)
+    for (const source of existingManualSources) {
+      unique.add(source)
+    }
+    return [...unique]
+  }, [existingManualSources, settings.language])
+  const manualSourceSelectOptions = useMemo(() => {
+    if (formMode !== 'manual') {
+      return manualSourceOptions
+    }
+    const currentSource = form.source.trim()
+    if (!currentSource || manualSourceOptions.includes(currentSource)) {
+      return manualSourceOptions
+    }
+    return [currentSource, ...manualSourceOptions]
+  }, [form.source, formMode, manualSourceOptions])
   const selectedShiftJob = useMemo(
     () => shiftJobs.find((job) => job.id === shiftForm.jobId) ?? shiftJobs.find((job) => job.id === resolvedDefaultShiftJobId) ?? null,
     [resolvedDefaultShiftJobId, shiftForm.jobId, shiftJobs],
@@ -162,11 +230,36 @@ export function IncomePage(): JSX.Element {
   const currentMonth = monthKey(today)
   const currentYear = today.slice(0, 4)
   const sources = useMemo(
-    () => [...new Set(incomeEntries.map((item) => incomeSourceLabel(item, settings.language)))],
-    [incomeEntries, settings.language],
+    () => [...new Set(analyticEntries.map((item) => incomeSourceLabel(item, settings.language)))],
+    [analyticEntries, settings.language],
   )
 
   const sourceAndQueryFiltered = useMemo(() => {
+    const query = uiState.globalSearch.trim().toLowerCase()
+    return analyticEntries
+      .filter((item) => {
+        const sourceLabel = incomeSourceLabel(item, settings.language)
+        return sourceFilter === 'all' ? true : sourceLabel === sourceFilter
+      })
+      .filter((item) => {
+        if (!query) {
+          return true
+        }
+        const sourceLabel = incomeSourceLabel(item, settings.language)
+        const text = `${sourceLabel} ${item.source} ${item.notes} ${item.tags.join(' ')}`.toLowerCase()
+        return text.includes(query)
+      })
+  }, [analyticEntries, settings.language, sourceFilter, uiState.globalSearch])
+
+  const periodRange = useMemo(
+    () =>
+      viewMode === 'month'
+        ? { start: startOfMonth(today), end: endOfMonth(today) }
+        : { start: startOfYear(today), end: endOfYear(today) },
+    [today, viewMode],
+  )
+
+  const tableSourceAndQueryFiltered = useMemo(() => {
     const query = uiState.globalSearch.trim().toLowerCase()
     return incomeEntries
       .filter((item) => {
@@ -183,19 +276,11 @@ export function IncomePage(): JSX.Element {
       })
   }, [incomeEntries, settings.language, sourceFilter, uiState.globalSearch])
 
-  const periodRange = useMemo(
-    () =>
-      viewMode === 'month'
-        ? { start: startOfMonth(today), end: endOfMonth(today) }
-        : { start: startOfYear(today), end: endOfYear(today) },
-    [today, viewMode],
-  )
-
   const tableEntries = useMemo(() => {
-    return sourceAndQueryFiltered
+    return tableSourceAndQueryFiltered
       .filter((item) => (viewMode === 'month' ? monthKey(item.date) === currentMonth : item.date.startsWith(currentYear)))
       .sort((a, b) => b.date.localeCompare(a.date))
-  }, [currentMonth, currentYear, sourceAndQueryFiltered, viewMode])
+  }, [currentMonth, currentYear, tableSourceAndQueryFiltered, viewMode])
 
   const resolvedPeriodEntries = useMemo(
     () => materializeIncomeEntriesForRange(sourceAndQueryFiltered, periodRange.start, periodRange.end),
@@ -258,7 +343,12 @@ export function IncomePage(): JSX.Element {
       setFormError('')
       if (!editId && formMode === 'job-shift') {
         if (!selectedShiftJob) {
-          throw new Error(t('Kein Job konfiguriert. Bitte zuerst in den Einstellungen einen Job anlegen.', 'No job configured. Please add a job in settings first.'))
+          throw new Error(
+            t(
+              'Kein fallweiser Job konfiguriert. Bitte zuerst in den Einstellungen einen fallweisen Job anlegen.',
+              'No casual job configured. Please add a casual job in settings first.',
+            ),
+          )
         }
         const result = calculateShiftIncome({
           date: shiftForm.date,
@@ -366,7 +456,7 @@ export function IncomePage(): JSX.Element {
             className="button button-secondary"
             onClick={() => openAddForm('job-shift')}
             disabled={shiftJobs.length === 0}
-            title={shiftJobs.length === 0 ? t('Bitte zuerst einen Job in Einstellungen anlegen.', 'Please add a job in settings first.') : undefined}
+            title={shiftJobs.length === 0 ? t('Bitte zuerst einen fallweisen Job in Einstellungen anlegen.', 'Please add a casual job in settings first.') : undefined}
           >
             {t('Dienst loggen', 'Log shift')}
           </button>
@@ -502,10 +592,6 @@ export function IncomePage(): JSX.Element {
                     <input ref={shiftDateInputRef} type="date" value={shiftForm.date} onChange={(event) => setShiftForm((current) => ({ ...current, date: event.target.value }))} required />
                   </label>
                   <label>
-                    {t('Quelle', 'Source')}
-                    <input value={selectedShiftJob?.name ?? ''} readOnly aria-readonly="true" />
-                  </label>
-                  <label>
                     {t('Start', 'Start')}
                     <input type="time" value={shiftForm.startTime} onChange={(event) => setShiftForm((current) => ({ ...current, startTime: event.target.value }))} required />
                   </label>
@@ -546,7 +632,13 @@ export function IncomePage(): JSX.Element {
                   </label>
                   <label>
                     {t('Quelle', 'Source')}
-                    <input value={form.source} onChange={(event) => setForm((current) => ({ ...current, source: event.target.value }))} required />
+                    <select value={form.source} onChange={(event) => setForm((current) => ({ ...current, source: event.target.value }))} required>
+                      {manualSourceSelectOptions.map((sourceOption) => (
+                        <option key={sourceOption} value={sourceOption}>
+                          {sourceOption}
+                        </option>
+                      ))}
+                    </select>
                   </label>
                   <label>
                     {t('Wiederkehrend', 'Recurring')}

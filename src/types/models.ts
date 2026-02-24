@@ -42,11 +42,19 @@ export interface IncomeEntry {
 }
 
 export type Frequency = 'monthly' | 'yearly'
+export type EmploymentType = 'casual' | 'fixed'
+export type FixedPayInterval = 'monthly' | 'biweekly' | 'weekly'
 
 export interface ShiftJobConfig {
   id: string
   name: string
-  hourlyRate: number
+  employmentType: EmploymentType
+  hourlyRate?: number
+  salaryAmount?: number
+  fixedPayInterval?: FixedPayInterval
+  has13thSalary?: boolean
+  has14thSalary?: boolean
+  startDate?: string
 }
 
 export interface InterestScenarioInput {

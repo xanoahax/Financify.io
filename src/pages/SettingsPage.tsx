@@ -2,15 +2,30 @@ import { useCallback, useState } from 'react'
 import packageJson from '../../package.json'
 import { useGuardedBackdropClose } from '../hooks/useGuardedBackdropClose'
 import { useAppContext } from '../state/useAppContext'
-import type { AppBackup, ShiftJobConfig } from '../types/models'
+import type { AppBackup, EmploymentType, FixedPayInterval, ShiftJobConfig } from '../types/models'
 import { saveTextFileWithDialog } from '../utils/csv'
 import { getCurrencySymbol } from '../utils/format'
 import { tx } from '../utils/i18n'
 
 const accentPresets = ['#0a84ff', '#2ec4b6', '#ff9f0a', '#bf5af2', '#ff375f', '#6e6e73']
 
+interface JobDraftState {
+  name: string
+  employmentType: EmploymentType
+  hourlyRate: string
+  salaryAmount: string
+  fixedPayInterval: FixedPayInterval
+  has13thSalary: boolean
+  has14thSalary: boolean
+  startDate: string
+}
+
 function makeJobId(): string {
   return `job-${crypto.randomUUID()}`
+}
+
+function todayDateString(): string {
+  return new Date().toISOString().slice(0, 10)
 }
 
 function profileInitials(name: string): string {
@@ -113,14 +128,34 @@ export function SettingsPage(): JSX.Element {
   const [avatarOffsetY, setAvatarOffsetY] = useState(0)
   const [avatarEditorError, setAvatarEditorError] = useState('')
   const [avatarEditorSaving, setAvatarEditorSaving] = useState(false)
+  const [jobModalOpen, setJobModalOpen] = useState(false)
+  const [jobModalMode, setJobModalMode] = useState<'create' | 'edit'>('create')
+  const [editingJobId, setEditingJobId] = useState<string | null>(null)
+  const [jobDraft, setJobDraft] = useState<JobDraftState>({
+    name: '',
+    employmentType: 'casual',
+    hourlyRate: '18',
+    salaryAmount: '3000',
+    fixedPayInterval: 'monthly',
+    has13thSalary: false,
+    has14thSalary: false,
+    startDate: todayDateString(),
+  })
+  const [jobModalError, setJobModalError] = useState('')
   const t = (de: string, en: string) => tx(settings.language, de, en)
   const hasBackgroundImage = Boolean(backgroundImageDataUrl)
   const currencySymbol = getCurrencySymbol(settings.currency)
+  const casualJobs = settings.shiftJobs.filter((job) => job.employmentType === 'casual')
   const canDeleteProfile = profiles.length > 1
   const closeEditProfile = useCallback(() => setEditProfileOpen(false), [])
   const closeDeleteProfileConfirm = useCallback(() => setConfirmDeleteProfile(false), [])
   const closeClearAllDataConfirm = useCallback(() => setConfirmClearAllData(false), [])
   const closeImportSuccess = useCallback(() => setImportSuccessMessage(''), [])
+  const closeJobModal = useCallback(() => {
+    setJobModalOpen(false)
+    setJobModalError('')
+    setEditingJobId(null)
+  }, [])
   const closeAvatarEditor = useCallback(() => {
     setAvatarEditorOpen(false)
     setAvatarEditorError('')
@@ -130,6 +165,7 @@ export function SettingsPage(): JSX.Element {
   const deleteProfileBackdropCloseGuard = useGuardedBackdropClose(closeDeleteProfileConfirm)
   const clearAllDataBackdropCloseGuard = useGuardedBackdropClose(closeClearAllDataConfirm)
   const importSuccessBackdropCloseGuard = useGuardedBackdropClose(closeImportSuccess)
+  const jobModalBackdropCloseGuard = useGuardedBackdropClose(closeJobModal)
   const avatarEditorBackdropCloseGuard = useGuardedBackdropClose(closeAvatarEditor)
 
   async function exportJson(): Promise<void> {
@@ -151,26 +187,94 @@ export function SettingsPage(): JSX.Element {
   }
 
   function updateShiftJobs(nextJobs: ShiftJobConfig[], nextDefaultId?: string): void {
-    const resolvedDefaultId = nextJobs.length === 0 ? '' : nextDefaultId && nextJobs.some((job) => job.id === nextDefaultId) ? nextDefaultId : nextJobs[0].id
+    const nextCasualJobs = nextJobs.filter((job) => job.employmentType === 'casual')
+    const resolvedDefaultId =
+      nextCasualJobs.length === 0
+        ? ''
+        : nextDefaultId && nextCasualJobs.some((job) => job.id === nextDefaultId)
+          ? nextDefaultId
+          : nextCasualJobs[0].id
     setSettings({ shiftJobs: nextJobs, defaultShiftJobId: resolvedDefaultId })
   }
 
-  function addJob(): void {
-    const next = [...settings.shiftJobs, { id: makeJobId(), name: t('Neuer Job', 'New job'), hourlyRate: 18 }]
-    updateShiftJobs(next, settings.defaultShiftJobId)
+  function openCreateJobModal(): void {
+    setJobModalMode('create')
+    setEditingJobId(null)
+    setJobDraft({
+      name: t('Neuer Job', 'New job'),
+      employmentType: 'casual',
+      hourlyRate: '18',
+      salaryAmount: '3000',
+      fixedPayInterval: 'monthly',
+      has13thSalary: false,
+      has14thSalary: false,
+      startDate: todayDateString(),
+    })
+    setJobModalError('')
+    setJobModalOpen(true)
   }
 
-  function updateJobName(id: string, value: string): void {
-    const next = settings.shiftJobs.map((job) => (job.id === id ? { ...job, name: value } : job))
-    updateShiftJobs(next, settings.defaultShiftJobId)
+  function openEditJobModal(job: ShiftJobConfig): void {
+    setJobModalMode('edit')
+    setEditingJobId(job.id)
+    setJobDraft({
+      name: job.name,
+      employmentType: job.employmentType,
+      hourlyRate: String(job.hourlyRate ?? 18),
+      salaryAmount: String(job.salaryAmount ?? 3000),
+      fixedPayInterval: job.fixedPayInterval ?? 'monthly',
+      has13thSalary: Boolean(job.has13thSalary),
+      has14thSalary: Boolean(job.has14thSalary),
+      startDate: job.startDate ?? todayDateString(),
+    })
+    setJobModalError('')
+    setJobModalOpen(true)
   }
 
-  function updateJobRate(id: string, value: string): void {
-    const parsed = Number(value)
-    const next = settings.shiftJobs.map((job) =>
-      job.id === id ? { ...job, hourlyRate: Number.isFinite(parsed) && parsed > 0 ? parsed : 18 } : job,
-    )
-    updateShiftJobs(next, settings.defaultShiftJobId)
+  function saveJobFromModal(): void {
+    const normalizedName = jobDraft.name.trim()
+    if (!normalizedName) {
+      setJobModalError(t('Bitte gib einen Jobnamen ein.', 'Please enter a job name.'))
+      return
+    }
+
+    let nextJob: ShiftJobConfig
+    if (jobDraft.employmentType === 'casual') {
+      const hourlyRate = Number(jobDraft.hourlyRate)
+      if (!Number.isFinite(hourlyRate) || hourlyRate <= 0) {
+        setJobModalError(t('Bitte gib einen gültigen Stundensatz ein.', 'Please enter a valid hourly rate.'))
+        return
+      }
+      nextJob = {
+        id: editingJobId ?? makeJobId(),
+        name: normalizedName,
+        employmentType: 'casual',
+        hourlyRate,
+      }
+    } else {
+      const salaryAmount = Number(jobDraft.salaryAmount)
+      if (!Number.isFinite(salaryAmount) || salaryAmount <= 0) {
+        setJobModalError(t('Bitte gib ein gültiges Gehalt ein.', 'Please enter a valid salary amount.'))
+        return
+      }
+      nextJob = {
+        id: editingJobId ?? makeJobId(),
+        name: normalizedName,
+        employmentType: 'fixed',
+        salaryAmount,
+        fixedPayInterval: jobDraft.fixedPayInterval,
+        has13thSalary: jobDraft.has13thSalary,
+        has14thSalary: jobDraft.has14thSalary,
+        startDate: jobDraft.startDate || todayDateString(),
+      }
+    }
+
+    const nextJobs =
+      jobModalMode === 'edit' && editingJobId
+        ? settings.shiftJobs.map((job) => (job.id === editingJobId ? nextJob : job))
+        : [...settings.shiftJobs, nextJob]
+    updateShiftJobs(nextJobs, settings.defaultShiftJobId)
+    closeJobModal()
   }
 
   function deleteJob(id: string): void {
@@ -579,14 +683,14 @@ export function SettingsPage(): JSX.Element {
       <article className="card">
         <header className="section-header">
           <h2>{t('Jobs', 'Jobs')}</h2>
-          <button type="button" className="button button-secondary" onClick={addJob}>
+          <button type="button" className="button button-secondary" onClick={openCreateJobModal}>
             {t('Job hinzufügen', 'Add job')}
           </button>
         </header>
         <p className="muted">
           {t(
-            'Lege Jobs für das Dienst-Logging an. Der Standard-Job wird beim schnellen Dienst-Loggen vorausgewählt.',
-            'Configure jobs for shift logging. The default job is preselected in quick shift logging.',
+            'Lege Jobs als fallweise oder fixe Anstellung an. Fallweise Jobs können als Dienste geloggt werden, fixe Jobs werden automatisch als wiederkehrendes Einkommen berücksichtigt.',
+            'Configure jobs as casual or fixed employment. Casual jobs can be logged as shifts, fixed jobs are counted automatically as recurring income.',
           )}
         </p>
         <div className="setting-list">
@@ -595,21 +699,40 @@ export function SettingsPage(): JSX.Element {
           ) : null}
           {settings.shiftJobs.map((job) => (
             <div className="job-row" key={job.id}>
-              <label>
-                {t('Jobname', 'Job name')}
-                <input value={job.name} onChange={(event) => updateJobName(job.id, event.target.value)} placeholder={t('z. B. FoodAffairs', 'e.g. FoodAffairs')} />
-              </label>
-              <label>
-                {`${t('Stundensatz', 'Hourly rate')} (${currencySymbol}/h)`}
-                <input type="number" min={0.01} step="0.01" value={job.hourlyRate} onChange={(event) => updateJobRate(job.id, event.target.value)} />
-              </label>
+              <div>
+                <strong>{job.name}</strong>
+                <p className="muted">
+                  {job.employmentType === 'casual'
+                    ? `${t('Fallweise', 'Casual')} · ${job.hourlyRate ?? 18} ${currencySymbol}/h`
+                    : `${t('Fixanstellung', 'Fixed employment')} · ${job.salaryAmount ?? 0} ${currencySymbol} · ${
+                        job.fixedPayInterval === 'weekly'
+                          ? t('Wöchentlich', 'Weekly')
+                          : job.fixedPayInterval === 'biweekly'
+                            ? t('Zweiwöchentlich', 'Biweekly')
+                            : t('Monatlich', 'Monthly')
+                      }`}
+                </p>
+                {job.employmentType === 'fixed' ? (
+                  <p className="hint">
+                    {t('Start', 'Start')}: {job.startDate ?? todayDateString()} · {t('Extras', 'Extras')}:{' '}
+                    {job.has13thSalary || job.has14thSalary
+                      ? [job.has13thSalary ? '13' : null, job.has14thSalary ? '14' : null].filter(Boolean).join(' + ')
+                      : t('Keine', 'None')}
+                  </p>
+                ) : null}
+              </div>
               <div className="inline-controls">
-                <button
-                  type="button"
-                  className={`button ${settings.defaultShiftJobId === job.id ? 'button-primary' : 'button-secondary'}`}
-                  onClick={() => setSettings({ defaultShiftJobId: job.id })}
-                >
-                  {settings.defaultShiftJobId === job.id ? t('Standard', 'Default') : t('Als Standard setzen', 'Set as default')}
+                {job.employmentType === 'casual' ? (
+                  <button
+                    type="button"
+                    className={`button ${settings.defaultShiftJobId === job.id ? 'button-primary' : 'button-secondary'}`}
+                    onClick={() => setSettings({ defaultShiftJobId: job.id })}
+                  >
+                    {settings.defaultShiftJobId === job.id ? t('Standard für Dienste', 'Default for shifts') : t('Als Dienst-Standard setzen', 'Set as shift default')}
+                  </button>
+                ) : null}
+                <button type="button" className="button button-secondary" onClick={() => openEditJobModal(job)}>
+                  {t('Bearbeiten', 'Edit')}
                 </button>
                 <button
                   type="button"
@@ -621,6 +744,9 @@ export function SettingsPage(): JSX.Element {
               </div>
             </div>
           ))}
+          {casualJobs.length === 0 ? (
+            <p className="hint">{t('Hinweis: Für Dienst-Logging brauchst du mindestens einen fallweisen Job.', 'Note: You need at least one casual job for shift logging.')}</p>
+          ) : null}
         </div>
       </article>
 
@@ -664,6 +790,118 @@ export function SettingsPage(): JSX.Element {
           </button>
         </div>
       </article>
+
+      {jobModalOpen ? (
+        <div
+          className="form-modal-backdrop"
+          onMouseDown={jobModalBackdropCloseGuard.onBackdropMouseDown}
+          onClick={jobModalBackdropCloseGuard.onBackdropClick}
+          role="presentation"
+        >
+          <article className="card form-modal confirm-modal" onMouseDownCapture={jobModalBackdropCloseGuard.onModalMouseDownCapture} onClick={(event) => event.stopPropagation()}>
+            <header className="section-header">
+              <h2>{jobModalMode === 'create' ? t('Job hinzufügen', 'Add job') : t('Job bearbeiten', 'Edit job')}</h2>
+              <button type="button" className="icon-button" onClick={closeJobModal} aria-label={t('Popup schließen', 'Close popup')}>
+                ×
+              </button>
+            </header>
+            <div className="setting-list">
+              <label>
+                {t('Jobname', 'Job name')}
+                <input
+                  value={jobDraft.name}
+                  onChange={(event) => setJobDraft((current) => ({ ...current, name: event.target.value }))}
+                  placeholder={t('z. B. Marketing', 'e.g. Marketing')}
+                />
+              </label>
+              <label>
+                {t('Anstellung', 'Employment')}
+                <select
+                  value={jobDraft.employmentType}
+                  onChange={(event) =>
+                    setJobDraft((current) => ({
+                      ...current,
+                      employmentType: event.target.value as EmploymentType,
+                    }))
+                  }
+                >
+                  <option value="casual">{t('Fallweise', 'Casual')}</option>
+                  <option value="fixed">{t('Fixanstellung', 'Fixed employment')}</option>
+                </select>
+              </label>
+              {jobDraft.employmentType === 'casual' ? (
+                <label>
+                  {`${t('Stundensatz', 'Hourly rate')} (${currencySymbol}/h)`}
+                  <input
+                    type="number"
+                    min={0.01}
+                    step="0.01"
+                    value={jobDraft.hourlyRate}
+                    onChange={(event) => setJobDraft((current) => ({ ...current, hourlyRate: event.target.value }))}
+                  />
+                </label>
+              ) : (
+                <>
+                  <label>
+                    {`${t('Gehalt pro Auszahlung', 'Salary per payout')} (${currencySymbol})`}
+                    <input
+                      type="number"
+                      min={0.01}
+                      step="0.01"
+                      value={jobDraft.salaryAmount}
+                      onChange={(event) => setJobDraft((current) => ({ ...current, salaryAmount: event.target.value }))}
+                    />
+                  </label>
+                  <label>
+                    {t('Auszahlungsintervall', 'Payout interval')}
+                    <select
+                      value={jobDraft.fixedPayInterval}
+                      onChange={(event) => setJobDraft((current) => ({ ...current, fixedPayInterval: event.target.value as FixedPayInterval }))}
+                    >
+                      <option value="monthly">{t('Monatlich', 'Monthly')}</option>
+                      <option value="biweekly">{t('Zweiwöchentlich', 'Biweekly')}</option>
+                      <option value="weekly">{t('Wöchentlich', 'Weekly')}</option>
+                    </select>
+                  </label>
+                  <label>
+                    {t('Startdatum', 'Start date')}
+                    <input
+                      type="date"
+                      value={jobDraft.startDate}
+                      onChange={(event) => setJobDraft((current) => ({ ...current, startDate: event.target.value }))}
+                    />
+                  </label>
+                  <label className="switch">
+                    <input
+                      type="checkbox"
+                      checked={jobDraft.has13thSalary}
+                      onChange={(event) => setJobDraft((current) => ({ ...current, has13thSalary: event.target.checked }))}
+                    />
+                    <span>{t('13. Gehalt berücksichtigen', 'Include 13th salary')}</span>
+                  </label>
+                  <label className="switch">
+                    <input
+                      type="checkbox"
+                      checked={jobDraft.has14thSalary}
+                      onChange={(event) => setJobDraft((current) => ({ ...current, has14thSalary: event.target.checked }))}
+                    />
+                    <span>{t('14. Gehalt berücksichtigen', 'Include 14th salary')}</span>
+                  </label>
+                </>
+              )}
+              {jobModalError ? <p className="error-text">{jobModalError}</p> : null}
+            </div>
+            <div className="form-actions">
+              <button type="button" className="button button-primary" onClick={saveJobFromModal}>
+                {jobModalMode === 'create' ? t('Job speichern', 'Save job') : t('Änderungen speichern', 'Save changes')}
+              </button>
+              <button type="button" className="button button-secondary" onClick={closeJobModal}>
+                {t('Abbrechen', 'Cancel')}
+              </button>
+            </div>
+          </article>
+        </div>
+      ) : null}
 
       {avatarEditorOpen ? (
         <div

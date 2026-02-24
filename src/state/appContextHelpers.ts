@@ -15,7 +15,7 @@ import {
   saveActiveProfileId,
   saveProfiles,
 } from '../data/profileStore'
-import type { AppLanguage, Settings, ShiftJobConfig, UiState, UserProfile } from '../types/models'
+import type { AppLanguage, EmploymentType, FixedPayInterval, Settings, ShiftJobConfig, UiState, UserProfile } from '../types/models'
 import { tx } from '../utils/i18n'
 
 const SUPPORTED_CURRENCIES = ['EUR', 'USD'] as const
@@ -71,21 +71,64 @@ function normalizeImportedShiftJobs(raw: unknown): ShiftJobConfig[] {
   if (!Array.isArray(raw)) {
     return []
   }
-  return raw
-    .map((row) => {
+  function normalizeEmploymentType(value: unknown): EmploymentType {
+    return value === 'fixed' ? 'fixed' : 'casual'
+  }
+  function normalizeFixedPayInterval(value: unknown): FixedPayInterval {
+    if (value === 'weekly' || value === 'biweekly' || value === 'monthly') {
+      return value
+    }
+    return 'monthly'
+  }
+  function isDateString(value: unknown): value is string {
+    return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+  }
+  const todayDate = new Date().toISOString().slice(0, 10)
+  return raw.reduce<ShiftJobConfig[]>((acc, row) => {
       if (!row || typeof row !== 'object') {
-        return null
+        return acc
       }
-      const job = row as { id?: unknown; name?: unknown; hourlyRate?: unknown }
+      const job = row as {
+        id?: unknown
+        name?: unknown
+        employmentType?: unknown
+        hourlyRate?: unknown
+        salaryAmount?: unknown
+        fixedPayInterval?: unknown
+        has13thSalary?: unknown
+        has14thSalary?: unknown
+        startDate?: unknown
+      }
       const name = typeof job.name === 'string' ? job.name.trim() : ''
-      const hourlyRate = Number(job.hourlyRate)
-      if (!name || !Number.isFinite(hourlyRate) || hourlyRate <= 0) {
-        return null
+      if (!name) {
+        return acc
       }
+      const employmentType = normalizeEmploymentType(job.employmentType)
       const id = typeof job.id === 'string' && job.id.trim() ? job.id : makeId()
-      return { id, name, hourlyRate }
-    })
-    .filter((job): job is ShiftJobConfig => job !== null)
+      if (employmentType === 'fixed') {
+        const salaryAmount = Number(job.salaryAmount)
+        if (!Number.isFinite(salaryAmount) || salaryAmount <= 0) {
+          return acc
+        }
+        acc.push({
+          id,
+          name,
+          employmentType: 'fixed' as const,
+          salaryAmount,
+          fixedPayInterval: normalizeFixedPayInterval(job.fixedPayInterval),
+          has13thSalary: Boolean(job.has13thSalary),
+          has14thSalary: Boolean(job.has14thSalary),
+          startDate: isDateString(job.startDate) ? job.startDate : todayDate,
+        })
+        return acc
+      }
+      const hourlyRate = Number(job.hourlyRate)
+      if (!Number.isFinite(hourlyRate) || hourlyRate <= 0) {
+        return acc
+      }
+      acc.push({ id, name, employmentType: 'casual' as const, hourlyRate })
+      return acc
+    }, [])
 }
 
 export function normalizeImportedSettings(raw: unknown): Settings {
@@ -94,10 +137,11 @@ export function normalizeImportedSettings(raw: unknown): Settings {
   }
   const candidate = raw as Partial<Settings> & { shiftJobs?: unknown; defaultShiftJobId?: unknown }
   const shiftJobs = normalizeImportedShiftJobs(candidate.shiftJobs)
+  const casualJobs = shiftJobs.filter((job) => job.employmentType === 'casual')
   const defaultShiftJobId =
-    typeof candidate.defaultShiftJobId === 'string' && shiftJobs.some((job) => job.id === candidate.defaultShiftJobId)
+    typeof candidate.defaultShiftJobId === 'string' && casualJobs.some((job) => job.id === candidate.defaultShiftJobId)
       ? candidate.defaultShiftJobId
-      : shiftJobs[0]?.id ?? ''
+      : casualJobs[0]?.id ?? ''
 
   return {
     ...defaultSettings,
@@ -220,4 +264,3 @@ export function buildInitialProfileState(): { profiles: UserProfile[]; activePro
   }
   return { profiles, activeProfileId }
 }
-

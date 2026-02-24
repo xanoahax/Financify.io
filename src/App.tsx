@@ -36,6 +36,8 @@ export default function App(): JSX.Element {
     activeProfile,
     isProfileLocked,
     switchProfile,
+    createProfile,
+    lockActiveProfile,
     needsOnboarding,
     canExitOnboarding,
     completeOnboarding,
@@ -54,14 +56,16 @@ export default function App(): JSX.Element {
   } = useAppContext()
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [showDesktopDownloadHint, setShowDesktopDownloadHint] = useState(() => isGitHubPagesRuntime())
+  const [isSessionLoggedOut, setIsSessionLoggedOut] = useState(false)
   const [unlockSecret, setUnlockSecret] = useState('')
   const [unlockError, setUnlockError] = useState('')
   const [unlocking, setUnlocking] = useState(false)
   const navigate = useNavigate()
-  const { effectiveSettings, effectiveBackgroundImageDataUrl, captureCurrentVisualSnapshot } = useLockScreenVisuals({
+  const showLoginScreen = isProfileLocked || isSessionLoggedOut
+  const { effectiveSettings, effectiveBackgroundImageDataUrl, captureCurrentVisualSnapshot, clearCurrentVisualSnapshot } = useLockScreenVisuals({
     settings,
     backgroundImageDataUrl,
-    isProfileLocked,
+    isProfileLocked: showLoginScreen,
   })
   const language = effectiveSettings.language
   const t = (de: string, en: string) => tx(language, de, en)
@@ -87,16 +91,27 @@ export default function App(): JSX.Element {
   const handleLockedProfileSelect = useCallback(
     (profileId: string) => {
       // While locked, keep the existing login visual snapshot untouched.
+      const selectedProfile = profiles.find((profile) => profile.id === profileId)
       resetUnlockState()
       switchProfile(profileId)
+      if (selectedProfile?.authMode === 'none') {
+        clearCurrentVisualSnapshot()
+        setIsSessionLoggedOut(false)
+      }
     },
-    [resetUnlockState, switchProfile],
+    [clearCurrentVisualSnapshot, profiles, resetUnlockState, switchProfile],
   )
+  const handleLockProfile = useCallback(() => {
+    // Preserve current visual state for the lock screen.
+    captureCurrentVisualSnapshot()
+    setIsSessionLoggedOut(true)
+    lockActiveProfile()
+  }, [captureCurrentVisualSnapshot, lockActiveProfile])
 
   useEffect(() => {
     resetUnlockState()
     setUnlocking(false)
-  }, [activeProfileId, isProfileLocked, resetUnlockState])
+  }, [activeProfileId, showLoginScreen, resetUnlockState])
 
   useDocumentAppearance({
     settings: effectiveSettings,
@@ -112,11 +127,10 @@ export default function App(): JSX.Element {
   ]
   const selectableProfiles = useMemo(() => {
     const completed = profiles.filter((profile) => profile.onboardingCompleted)
-    const pending = profiles.filter((profile) => !profile.onboardingCompleted)
-    const base = pending.length > 0 ? [...completed, pending[pending.length - 1]] : completed
+    const base = completed
     if (activeProfileId && !base.some((profile) => profile.id === activeProfileId)) {
       const active = profiles.find((profile) => profile.id === activeProfileId)
-      if (active) {
+      if (active && active.onboardingCompleted) {
         return [...base, active]
       }
     }
@@ -124,7 +138,7 @@ export default function App(): JSX.Element {
   }, [activeProfileId, profiles])
   useEffect(() => {
     function onShortcut(event: KeyboardEvent): void {
-      if (isProfileLocked) {
+      if (showLoginScreen) {
         return
       }
       const isPaletteShortcut = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k'
@@ -135,13 +149,13 @@ export default function App(): JSX.Element {
     }
     window.addEventListener('keydown', onShortcut)
     return () => window.removeEventListener('keydown', onShortcut)
-  }, [isProfileLocked])
+  }, [showLoginScreen])
 
   useEffect(() => {
-    if (isProfileLocked) {
+    if (showLoginScreen) {
       setPaletteOpen(false)
     }
-  }, [isProfileLocked])
+  }, [showLoginScreen])
 
   useEffect(() => {
     if (!updatesSupported || loading || startupUpdateCheckTriggered) {
@@ -192,12 +206,25 @@ export default function App(): JSX.Element {
       setUnlocking(true)
       setUnlockError('')
       await unlockActiveProfile(unlockSecret)
+      clearCurrentVisualSnapshot()
+      setIsSessionLoggedOut(false)
       setUnlockSecret('')
     } catch (error) {
       setUnlockError(error instanceof Error ? error.message : t('Entsperren fehlgeschlagen.', 'Unlock failed.'))
     } finally {
       setUnlocking(false)
     }
+  }
+
+  if (loading) {
+    return (
+      <main className="loading-shell">
+        <article className="card loading-card">
+          <h1>financify</h1>
+          <p className="muted">{t('Lokale Daten werden geladen...', 'Loading local data...')}</p>
+        </article>
+      </main>
+    )
   }
 
   if (needsOnboarding) {
@@ -225,7 +252,7 @@ export default function App(): JSX.Element {
     )
   }
 
-  if (isProfileLocked) {
+  if (showLoginScreen) {
     return (
       <>
         <BackgroundLayers imageStyle={backgroundStyle} />
@@ -238,22 +265,12 @@ export default function App(): JSX.Element {
           unlockError={unlockError}
           unlocking={unlocking}
           onSelectProfile={handleLockedProfileSelect}
+          onCreateProfile={() => createProfile('')}
           onUnlockSecretChange={setUnlockSecret}
           onUnlockSubmit={onUnlockSubmit}
         />
         <ToastHost toasts={toasts} onDismiss={dismissToast} language={language} />
       </>
-    )
-  }
-
-  if (loading) {
-    return (
-      <main className="loading-shell">
-        <article className="card loading-card">
-          <h1>financify</h1>
-          <p className="muted">{t('Lokale Daten werden geladen...', 'Loading local data...')}</p>
-        </article>
-      </main>
     )
   }
 
@@ -301,11 +318,14 @@ export default function App(): JSX.Element {
           </nav>
           <div className="sidebar-footer">
             <ProfileSwitcher
+              key={`sidebar-profile-switcher-${activeProfileId}`}
               profiles={selectableProfiles}
               activeProfileId={activeProfileId}
               activeProfile={activeProfile}
               language={language}
               onSwitchProfile={handleProfileSwitch}
+              onCreateProfile={() => createProfile('')}
+              onLockProfile={handleLockProfile}
               className="sidebar-profile-switcher"
               autoWidth={false}
             />
@@ -333,11 +353,14 @@ export default function App(): JSX.Element {
             />
             <div className="topbar-actions">
               <ProfileSwitcher
+                key={`topbar-profile-switcher-${activeProfileId}`}
                 profiles={selectableProfiles}
                 activeProfileId={activeProfileId}
                 activeProfile={activeProfile}
                 language={language}
                 onSwitchProfile={handleProfileSwitch}
+                onCreateProfile={() => createProfile('')}
+                onLockProfile={handleLockProfile}
                 className="topbar-profile-switcher"
                 autoWidth
               />

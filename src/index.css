@@ -15,8 +15,7 @@
   --gradient-b: #25c99a;
   --select-arrow: #5f6570;
   --select-menu-bg: #ffffff;
-  --calendar-indicator-filter: invert(0);
-  --calendar-indicator-opacity: 0.85;
+  --control-color-scheme: light;
   --success: #1f8f4f;
   --warning: #bf8f00;
   --error: #c63b3b;
@@ -44,8 +43,7 @@
   --shadow-s2: 0 20px 40px rgba(0, 0, 0, 0.46);
   --select-arrow: #b0b1b9;
   --select-menu-bg: #1f2023;
-  --calendar-indicator-filter: invert(1) brightness(1.2);
-  --calendar-indicator-opacity: 0.98;
+  --control-color-scheme: dark;
   --gradient-a: #6a6d76;
   --gradient-b: #50535b;
   --success: #54d087;
@@ -65,8 +63,7 @@
   --shadow-s2: 0 24px 52px rgba(0, 0, 0, 0.48);
   --select-arrow: #c0c2c9;
   --select-menu-bg: #202226;
-  --calendar-indicator-filter: invert(1) brightness(1.28);
-  --calendar-indicator-opacity: 0.98;
+  --control-color-scheme: dark;
   --gradient-a: #777a82;
   --gradient-b: #555960;
   --success: #4ad7a2;
@@ -190,28 +187,15 @@ textarea {
   background: var(--surface);
 }
 
-:root[data-theme='light'] input[type='date'],
-:root[data-theme='light'] input[type='time'] {
-  color-scheme: light;
-}
-
-:root[data-theme='dark'] input[type='date'],
-:root[data-theme='dark'] input[type='time'],
-:root[data-theme='glass'] input[type='date'],
-:root[data-theme='glass'] input[type='time'] {
-  color-scheme: dark;
-}
-
 input[type='date'],
 input[type='time'] {
   padding-right: 40px;
+  color-scheme: var(--control-color-scheme);
 }
 
 input[type='date']::-webkit-calendar-picker-indicator,
 input[type='time']::-webkit-calendar-picker-indicator {
   cursor: pointer;
-  opacity: var(--calendar-indicator-opacity);
-  filter: var(--calendar-indicator-filter);
 }
 
 select {
@@ -469,6 +453,15 @@ td small {
   padding: 11px var(--space-3);
 }
 
+.sidebar-profile-switcher .profile-switcher-name {
+  flex: 0 1 auto;
+  max-width: calc(100% - 70px);
+}
+
+.sidebar-profile-switcher .profile-switcher-caret {
+  margin-left: var(--space-1);
+}
+
 .sidebar-profile-switcher .profile-switcher-trigger:hover {
   background: color-mix(in srgb, var(--accent) 16%, transparent);
   color: var(--text);
@@ -565,12 +558,14 @@ td small {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  min-width: 0;
 }
 
 .profile-switcher {
   position: relative;
   display: inline-block;
   max-width: 100%;
+  min-width: 0;
 }
 
 .profile-switcher-trigger {
@@ -584,16 +579,22 @@ td small {
   align-items: center;
   gap: var(--space-2);
   cursor: pointer;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .profile-switcher-name {
+  min-width: 0;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .profile-switcher-caret {
-  margin-left: auto;
+  margin-left: var(--space-1);
   color: var(--text-muted);
   font-size: 0.85rem;
+  flex-shrink: 0;
 }
 
 .profile-switcher-menu {
@@ -621,12 +622,16 @@ td small {
   align-items: center;
   gap: var(--space-2);
   cursor: pointer;
+  min-width: 0;
 }
 
 .profile-switcher-option-name {
   flex: 1;
+  min-width: 0;
   text-align: left;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .profile-switcher-option:hover,
@@ -643,8 +648,23 @@ td small {
   text-align: center;
 }
 
+.profile-switcher-logout {
+  width: 24px;
+  text-align: center;
+  line-height: 1;
+}
+
 .topbar-profile-switcher {
   display: none;
+  max-width: min(340px, 44vw);
+}
+
+.topbar-profile-switcher .profile-switcher-name {
+  flex: 1;
+}
+
+.topbar-profile-switcher .profile-switcher-caret {
+  margin-left: auto;
 }
 
 .content {
@@ -1237,9 +1257,14 @@ input[type='checkbox']:disabled {
 
 .job-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(180px, 240px) auto;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: var(--space-3);
-  align-items: end;
+  align-items: start;
+}
+
+.job-row .inline-controls {
+  align-self: end;
+  justify-content: flex-end;
 }
 
 .color-row {
@@ -1450,13 +1475,19 @@ input[type='checkbox']:disabled {
   place-items: center;
   gap: var(--space-2);
   min-width: 120px;
+  max-width: 220px;
   cursor: pointer;
   color: var(--text-muted);
   transition: color 180ms ease, transform 180ms ease;
 }
 
 .login-profile-pill strong {
+  display: block;
+  max-width: 100%;
   font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .login-profile-pill.active {
@@ -1905,6 +1936,7 @@ input[type='checkbox']:disabled {
 
   .topbar-profile-switcher {
     display: inline-block;
+    max-width: min(72vw, 260px);
   }
 
   .palette-launcher {

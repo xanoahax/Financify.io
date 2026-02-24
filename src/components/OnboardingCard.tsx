@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { OnboardingSetupInput } from '../state/AppContext'
+import { todayString } from '../utils/date'
 import { tx } from '../utils/i18n'
 
 interface OnboardingCardProps {
@@ -21,8 +22,14 @@ export function OnboardingCard(props: OnboardingCardProps): JSX.Element {
   const [authMode, setAuthMode] = useState<OnboardingSetupInput['authMode']>('none')
   const [authSecret, setAuthSecret] = useState('')
   const [authSecretConfirm, setAuthSecretConfirm] = useState('')
+  const [jobEmploymentType, setJobEmploymentType] = useState<NonNullable<OnboardingSetupInput['jobEmploymentType']>>('casual')
   const [jobName, setJobName] = useState('')
   const [jobRate, setJobRate] = useState('18')
+  const [jobSalaryAmount, setJobSalaryAmount] = useState('3000')
+  const [jobFixedPayInterval, setJobFixedPayInterval] = useState<NonNullable<OnboardingSetupInput['jobFixedPayInterval']>>('monthly')
+  const [jobHas13thSalary, setJobHas13thSalary] = useState(false)
+  const [jobHas14thSalary, setJobHas14thSalary] = useState(false)
+  const [jobStartDate, setJobStartDate] = useState(todayString())
   const [stepIndex, setStepIndex] = useState(0)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -67,12 +74,26 @@ export function OnboardingCard(props: OnboardingCardProps): JSX.Element {
       if (!normalizedName) {
         return true
       }
-      const normalizedRate = Number(jobRate)
-      if (!Number.isFinite(normalizedRate) || normalizedRate <= 0) {
-        setError(tx(language, 'Bitte gib einen gültigen Stundensatz ein.', 'Please enter a valid hourly rate.'))
-        return false
+
+      if (jobEmploymentType === 'casual') {
+        const normalizedRate = Number(jobRate)
+        if (!Number.isFinite(normalizedRate) || normalizedRate <= 0) {
+          setError(tx(language, 'Bitte gib einen gültigen Stundensatz ein.', 'Please enter a valid hourly rate.'))
+          return false
+        }
+      } else {
+        const normalizedSalary = Number(jobSalaryAmount)
+        if (!Number.isFinite(normalizedSalary) || normalizedSalary <= 0) {
+          setError(tx(language, 'Bitte gib ein gültiges Gehalt ein.', 'Please enter a valid salary amount.'))
+          return false
+        }
+        if (!jobStartDate) {
+          setError(tx(language, 'Bitte gib ein Startdatum ein.', 'Please enter a start date.'))
+          return false
+        }
       }
     }
+
     return true
   }
 
@@ -96,6 +117,7 @@ export function OnboardingCard(props: OnboardingCardProps): JSX.Element {
         return
       }
     }
+
     setError('')
     setSubmitting(true)
     try {
@@ -107,8 +129,14 @@ export function OnboardingCard(props: OnboardingCardProps): JSX.Element {
         dateFormat,
         authMode,
         authSecret: authMode === 'none' ? undefined : authSecret,
+        jobEmploymentType,
         jobName,
-        jobHourlyRate: Number(jobRate),
+        jobHourlyRate: jobEmploymentType === 'casual' ? Number(jobRate) : undefined,
+        jobSalaryAmount: jobEmploymentType === 'fixed' ? Number(jobSalaryAmount) : undefined,
+        jobFixedPayInterval: jobEmploymentType === 'fixed' ? jobFixedPayInterval : undefined,
+        jobHas13thSalary: jobEmploymentType === 'fixed' ? jobHas13thSalary : undefined,
+        jobHas14thSalary: jobEmploymentType === 'fixed' ? jobHas14thSalary : undefined,
+        jobStartDate: jobEmploymentType === 'fixed' ? jobStartDate : undefined,
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : tx(language, 'Einrichtung fehlgeschlagen.', 'Setup failed.'))
@@ -123,6 +151,7 @@ export function OnboardingCard(props: OnboardingCardProps): JSX.Element {
         <h1>{tx(language, 'Einrichtung', 'Setup')}</h1>
         <p className="muted">{tx(language, `Profil: ${profileName || initialProfileName}`, `Profile: ${profileName || initialProfileName}`)}</p>
       </header>
+
       <div className="setting-list">
         <p className="muted onboarding-step-title">
           {stepIndex === 0 ? tx(language, 'Name und Sprache', 'Name and language') : null}
@@ -130,6 +159,7 @@ export function OnboardingCard(props: OnboardingCardProps): JSX.Element {
           {stepIndex === 2 ? tx(language, 'Währung, Datum und Theme', 'Currency, date format, and theme') : null}
           {stepIndex === 3 ? tx(language, 'Job-Setup (optional)', 'Job setup (optional)') : null}
         </p>
+
         {stepIndex === 0 ? (
           <>
             <label>
@@ -145,6 +175,7 @@ export function OnboardingCard(props: OnboardingCardProps): JSX.Element {
             </label>
           </>
         ) : null}
+
         {stepIndex === 1 ? (
           <>
             <label>
@@ -165,6 +196,7 @@ export function OnboardingCard(props: OnboardingCardProps): JSX.Element {
                 <option value="password">{tx(language, 'Passwort', 'Password')}</option>
               </select>
             </label>
+
             {authMode !== 'none' ? (
               <>
                 <label>
@@ -191,6 +223,7 @@ export function OnboardingCard(props: OnboardingCardProps): JSX.Element {
             ) : null}
           </>
         ) : null}
+
         {stepIndex === 2 ? (
           <>
             <label>
@@ -219,6 +252,7 @@ export function OnboardingCard(props: OnboardingCardProps): JSX.Element {
             </label>
           </>
         ) : null}
+
         {stepIndex === 3 ? (
           <>
             <label>
@@ -226,18 +260,70 @@ export function OnboardingCard(props: OnboardingCardProps): JSX.Element {
               <input value={jobName} onChange={(event) => setJobName(event.target.value)} placeholder={tx(language, 'z. B. FoodAffairs', 'e.g. FoodAffairs')} />
             </label>
             <label>
-              {tx(language, 'Stundensatz (optional)', 'Hourly rate (optional)')}
-              <input type="number" min={0.01} step="0.01" value={jobRate} onChange={(event) => setJobRate(event.target.value)} />
+              {tx(language, 'Anstellungsart', 'Employment type')}
+              <select
+                value={jobEmploymentType}
+                onChange={(event) => setJobEmploymentType(event.target.value as NonNullable<OnboardingSetupInput['jobEmploymentType']>)}
+              >
+                <option value="casual">{tx(language, 'Fallweise', 'Casual')}</option>
+                <option value="fixed">{tx(language, 'Fixanstellung', 'Fixed')}</option>
+              </select>
             </label>
+
+            {jobEmploymentType === 'casual' ? (
+              <label>
+                {tx(language, 'Stundensatz (optional)', 'Hourly rate (optional)')}
+                <input type="number" min={0.01} step="0.01" value={jobRate} onChange={(event) => setJobRate(event.target.value)} />
+              </label>
+            ) : (
+              <>
+                <label>
+                  {tx(language, 'Gehalt (pro Auszahlung)', 'Salary (per payout)')}
+                  <input type="number" min={0.01} step="0.01" value={jobSalaryAmount} onChange={(event) => setJobSalaryAmount(event.target.value)} />
+                </label>
+                <label>
+                  {tx(language, 'Auszahlungsintervall', 'Payout interval')}
+                  <select
+                    value={jobFixedPayInterval}
+                    onChange={(event) => setJobFixedPayInterval(event.target.value as NonNullable<OnboardingSetupInput['jobFixedPayInterval']>)}
+                  >
+                    <option value="monthly">{tx(language, 'Monatlich', 'Monthly')}</option>
+                    <option value="biweekly">{tx(language, 'Zweiwöchentlich', 'Biweekly')}</option>
+                    <option value="weekly">{tx(language, 'Wöchentlich', 'Weekly')}</option>
+                  </select>
+                </label>
+                <label>
+                  {tx(language, 'Startdatum', 'Start date')}
+                  <input type="date" value={jobStartDate} onChange={(event) => setJobStartDate(event.target.value)} />
+                </label>
+                <label className="toggle-row">
+                  <span className={`switch ${jobHas13thSalary ? 'on' : ''}`} aria-hidden="true">
+                    <input type="checkbox" checked={jobHas13thSalary} onChange={(event) => setJobHas13thSalary(event.target.checked)} />
+                    <span className="thumb" />
+                  </span>
+                  <span>{tx(language, '13. Gehalt', '13th salary')}</span>
+                </label>
+                <label className="toggle-row">
+                  <span className={`switch ${jobHas14thSalary ? 'on' : ''}`} aria-hidden="true">
+                    <input type="checkbox" checked={jobHas14thSalary} onChange={(event) => setJobHas14thSalary(event.target.checked)} />
+                    <span className="thumb" />
+                  </span>
+                  <span>{tx(language, '14. Gehalt', '14th salary')}</span>
+                </label>
+              </>
+            )}
           </>
         ) : null}
       </div>
+
       {error ? <p className="error-text">{error}</p> : null}
+
       <div className="onboarding-progress" role="presentation" aria-hidden="true">
         {Array.from({ length: totalSteps }, (_, dotIndex) => (
           <span key={`onboarding-dot-${dotIndex}`} className={`onboarding-dot ${dotIndex === stepIndex ? 'active' : ''}`} />
         ))}
       </div>
+
       <div className="onboarding-actions">
         <div className="onboarding-actions-left">
           {canExit ? (
@@ -269,4 +355,3 @@ export function OnboardingCard(props: OnboardingCardProps): JSX.Element {
     </article>
   )
 }
-

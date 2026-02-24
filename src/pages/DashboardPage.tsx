@@ -6,7 +6,7 @@ import { StatCard } from '../components/StatCard'
 import { useAppContext } from '../state/useAppContext'
 import { addDays, endOfMonth, monthLabel, startOfMonth, todayString } from '../utils/date'
 import { formatMoney, toPercent } from '../utils/format'
-import { materializeIncomeEntriesForRange, monthOverMonthChange, sumIncome } from '../utils/income'
+import { buildFixedSalaryIncomeTemplateEntries, materializeIncomeEntriesForRange, monthOverMonthChange, sumIncome } from '../utils/income'
 import { tx } from '../utils/i18n'
 import { monthlyTotal, monthlyTrend, topSubscriptions } from '../utils/subscription'
 
@@ -17,10 +17,11 @@ export function DashboardPage(): JSX.Element {
   const monthLocale = settings.language === 'de' ? 'de-DE' : 'en-US'
 
   const overview = useMemo(() => {
+    const allIncomeEntries = [...incomeEntries, ...buildFixedSalaryIncomeTemplateEntries(settings.shiftJobs)]
     const monthlySubscriptions = monthlyTotal(subscriptions)
-    const monthIncomeEntries = materializeIncomeEntriesForRange(incomeEntries, startOfMonth(today), endOfMonth(today))
+    const monthIncomeEntries = materializeIncomeEntriesForRange(allIncomeEntries, startOfMonth(today), endOfMonth(today))
     const monthIncome = sumIncome(monthIncomeEntries)
-    const lastYearIncomeEntries = materializeIncomeEntriesForRange(incomeEntries, addDays(today, -365), today)
+    const lastYearIncomeEntries = materializeIncomeEntriesForRange(allIncomeEntries, addDays(today, -365), today)
     const top = topSubscriptions(subscriptions, 3)
     const trend = monthlyTrend(subscriptions, 6).map((item) => ({ label: monthLabel(item.month, monthLocale), value: item.value }))
     const incomeMoM = monthOverMonthChange(lastYearIncomeEntries)
@@ -31,7 +32,7 @@ export function DashboardPage(): JSX.Element {
       trend,
       incomeMoM,
     }
-  }, [incomeEntries, monthLocale, subscriptions, today])
+  }, [incomeEntries, monthLocale, settings.shiftJobs, subscriptions, today])
 
   return (
     <section className="page">

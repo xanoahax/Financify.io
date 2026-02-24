@@ -74,8 +74,14 @@ export interface OnboardingSetupInput {
   profileName: string
   authMode: 'none' | 'pin' | 'password'
   authSecret?: string
+  jobEmploymentType?: ShiftJobConfig['employmentType']
   jobName?: string
   jobHourlyRate?: number
+  jobSalaryAmount?: number
+  jobFixedPayInterval?: NonNullable<ShiftJobConfig['fixedPayInterval']>
+  jobHas13thSalary?: boolean
+  jobHas14thSalary?: boolean
+  jobStartDate?: string
 }
 
 export interface AppContextValue {
@@ -330,7 +336,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       saveActiveProfileId(nextProfile.id)
       setProfilesState(nextProfiles)
       setActiveProfileIdState(nextProfile.id)
-      pushToast({ tone: 'success', text: tx(settings.language, 'Profil erstellt.', 'Profile created.') })
+      pushToast({ tone: 'success', text: tx(settings.language, 'Profil-Einrichtung gestartet.', 'Profile setup started.') })
     },
     [profiles, pushToast, settings.language],
   )
@@ -348,19 +354,21 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
 
   const renameProfile = useCallback(
     (profileId: string, name: string) => {
-      const existing = profiles.find((profile) => profile.id === profileId)
-      if (!existing) {
-        return
-      }
-      const remaining = profiles.filter((profile) => profile.id !== profileId)
-      const nextName = resolveUniqueProfileName(name, remaining, settings.language)
-      const nextProfiles = profiles.map((profile) =>
-        profile.id === profileId ? { ...profile, name: nextName, updatedAt: nowIso() } : profile,
-      )
-      saveProfiles(nextProfiles)
-      setProfilesState(nextProfiles)
+      setProfilesState((current) => {
+        const existing = current.find((profile) => profile.id === profileId)
+        if (!existing) {
+          return current
+        }
+        const remaining = current.filter((profile) => profile.id !== profileId)
+        const nextName = resolveUniqueProfileName(name, remaining, settings.language)
+        const nextProfiles = current.map((profile) =>
+          profile.id === profileId ? { ...profile, name: nextName, updatedAt: nowIso() } : profile,
+        )
+        saveProfiles(nextProfiles)
+        return nextProfiles
+      })
     },
-    [profiles, settings.language],
+    [settings.language],
   )
 
   const updateProfileAvatar = useCallback(
@@ -449,10 +457,46 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       }
       const authSecretHash = payload.authMode === 'none' ? '' : await hashSecret(secret)
 
-      const normalizedRate = Number(payload.jobHourlyRate)
       const jobName = payload.jobName?.trim() ?? ''
-      const shouldCreateJob = Boolean(jobName) && Number.isFinite(normalizedRate) && normalizedRate > 0
-      const shiftJobs: ShiftJobConfig[] = shouldCreateJob ? [{ id: `job-${crypto.randomUUID()}`, name: jobName, hourlyRate: normalizedRate }] : []
+      const jobEmploymentType = payload.jobEmploymentType ?? 'casual'
+      let shiftJobs: ShiftJobConfig[] = []
+
+      if (jobName) {
+        if (jobEmploymentType === 'casual') {
+          const normalizedRate = Number(payload.jobHourlyRate)
+          if (!Number.isFinite(normalizedRate) || normalizedRate <= 0) {
+            throw new Error(tx(payload.language, 'Bitte gib einen gültigen Stundensatz ein.', 'Please enter a valid hourly rate.'))
+          }
+          shiftJobs = [{ id: `job-${crypto.randomUUID()}`, name: jobName, employmentType: 'casual', hourlyRate: normalizedRate }]
+        } else {
+          const normalizedSalary = Number(payload.jobSalaryAmount)
+          if (!Number.isFinite(normalizedSalary) || normalizedSalary <= 0) {
+            throw new Error(tx(payload.language, 'Bitte gib ein gültiges Gehalt ein.', 'Please enter a valid salary amount.'))
+          }
+          shiftJobs = [
+            {
+              id: `job-${crypto.randomUUID()}`,
+              name: jobName,
+              employmentType: 'fixed',
+              salaryAmount: normalizedSalary,
+              fixedPayInterval: payload.jobFixedPayInterval ?? 'monthly',
+              has13thSalary: Boolean(payload.jobHas13thSalary),
+              has14thSalary: Boolean(payload.jobHas14thSalary),
+              startDate: payload.jobStartDate || nowIso().slice(0, 10),
+            },
+          ]
+        }
+      }
+      const defaultShiftJobId = shiftJobs.find((job) => job.employmentType === 'casual')?.id ?? ''
+      const nextSettings: Settings = {
+        ...settings,
+        language: payload.language,
+        theme: payload.theme,
+        currency: payload.currency,
+        dateFormat: payload.dateFormat,
+        shiftJobs,
+        defaultShiftJobId,
+      }
       setSettingsState((current) => ({
         ...current,
         language: payload.language,
@@ -460,8 +504,9 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
         currency: payload.currency,
         dateFormat: payload.dateFormat,
         shiftJobs,
-        defaultShiftJobId: shiftJobs[0]?.id ?? '',
+        defaultShiftJobId,
       }))
+      saveSettings(activeProfileId, nextSettings)
       setProfilesState((current) => {
         const timestamp = nowIso()
         const remaining = current.filter((profile) => profile.id !== activeProfileId)
@@ -484,20 +529,46 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       setIsActiveProfileUnlocked(payload.authMode !== 'none')
       pushToast({ tone: 'success', text: tx(payload.language, 'Einrichtung abgeschlossen.', 'Setup completed.') })
     },
-    [activeProfileId, pushToast],
+    [activeProfileId, pushToast, settings],
   )
 
   const exitOnboarding = useCallback(() => {
     if (!activeProfileId) {
       return
     }
+    const exitingProfile = profiles.find((profile) => profile.id === activeProfileId)
     const fallback = profiles.find((profile) => profile.id !== activeProfileId && profile.onboardingCompleted)
     if (!fallback) {
       return
     }
+    if (exitingProfile && !exitingProfile.onboardingCompleted) {
+      const nextProfiles = profiles.filter((profile) => profile.id !== activeProfileId)
+      saveProfiles(nextProfiles)
+      saveActiveProfileId(fallback.id)
+      setProfilesState(nextProfiles)
+      setActiveProfileIdState(fallback.id)
+      clearPersistedPreferences(activeProfileId)
+      clearRepositoryCache(activeProfileId)
+      void Promise.all([
+        replaceSubscriptions(activeProfileId, []),
+        replaceIncomeEntries(activeProfileId, []),
+        replaceInterestScenarios(activeProfileId, []),
+      ])
+        .then(() => deleteProfileDb(activeProfileId))
+        .catch(() => undefined)
+      pushToast({
+        tone: 'warning',
+        text: tx(
+          settings.language,
+          'Einrichtung abgebrochen. Neues Profil wurde verworfen.',
+          'Setup canceled. New profile was discarded.',
+        ),
+      })
+      return
+    }
     saveActiveProfileId(fallback.id)
     setActiveProfileIdState(fallback.id)
-  }, [activeProfileId, profiles])
+  }, [activeProfileId, profiles, pushToast, settings.language])
 
   const updateProfileProtection = useCallback(
     async (profileId: string, authMode: UserProfile['authMode'], authSecret?: string) => {
@@ -526,13 +597,15 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
         }
       }
 
-      const nextProfiles = profiles.map((profile) =>
-        profile.id === profileId
-          ? { ...profile, authMode, authSecretHash: nextHash, updatedAt: nowIso() }
-          : profile,
-      )
-      saveProfiles(nextProfiles)
-      setProfilesState(nextProfiles)
+      setProfilesState((current) => {
+        const mergedProfiles = current.map((profile) =>
+          profile.id === profileId
+            ? { ...profile, authMode, authSecretHash: nextHash, updatedAt: nowIso() }
+            : profile,
+        )
+        saveProfiles(mergedProfiles)
+        return mergedProfiles
+      })
       if (profileId === activeProfileId) {
         setIsActiveProfileUnlocked(authMode !== 'none')
       }
