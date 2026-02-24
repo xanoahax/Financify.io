@@ -6,7 +6,7 @@ import { LineChart } from '../components/LineChart'
 import { useGuardedBackdropClose } from '../hooks/useGuardedBackdropClose'
 import { useAppContext } from '../state/useAppContext'
 import type { Subscription, SubscriptionInterval, SubscriptionStatus } from '../types/models'
-import { monthLabel, todayString } from '../utils/date'
+import { compareDateStrings, monthLabel, todayString } from '../utils/date'
 import { formatMoney } from '../utils/format'
 import { tx } from '../utils/i18n'
 import { categoryBreakdown, monthlyEquivalent, monthlyTotal, monthlyTrend, topSubscriptions, yearlyTotal } from '../utils/subscription'
@@ -96,6 +96,7 @@ export function SubscriptionsPage(): JSX.Element {
   const [searchParams, setSearchParams] = useSearchParams()
   const [form, setForm] = useState<SubscriptionFormState>(() => buildDefaultForm())
   const [editId, setEditId] = useState<string | null>(null)
+  const [effectiveFromDate, setEffectiveFromDate] = useState(todayString())
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [sortBy, setSortBy] = useState<'amount' | 'name'>('amount')
   const [categoryFilter, setCategoryFilter] = useState('all')
@@ -105,10 +106,12 @@ export function SubscriptionsPage(): JSX.Element {
   const nameInputRef = useRef<HTMLInputElement | null>(null)
   const t = (de: string, en: string) => tx(settings.language, de, en)
   const monthLocale = settings.language === 'de' ? 'de-DE' : 'en-US'
+  const today = todayString()
 
   const closeForm = useCallback((): void => {
     setIsFormOpen(false)
     setEditId(null)
+    setEffectiveFromDate(todayString())
     setForm(buildDefaultForm())
     setFormError('')
   }, [])
@@ -123,6 +126,7 @@ export function SubscriptionsPage(): JSX.Element {
     const frame = window.requestAnimationFrame(() => {
       setIsFormOpen(true)
       setEditId(null)
+      setEffectiveFromDate(todayString())
       setForm(buildDefaultForm())
       setFormError('')
       window.requestAnimationFrame(() => nameInputRef.current?.focus())
@@ -187,6 +191,10 @@ export function SubscriptionsPage(): JSX.Element {
     }),
     [filtered, monthLocale],
   )
+  const tableRows = useMemo(
+    () => filtered.filter((item) => item.status === 'cancelled' || !item.endDate || compareDateStrings(item.endDate, today) >= 0),
+    [filtered, today],
+  )
 
   async function handleSave(event: React.FormEvent): Promise<void> {
     event.preventDefault()
@@ -204,7 +212,7 @@ export function SubscriptionsPage(): JSX.Element {
       }
 
       if (editId) {
-        await updateSubscription(editId, payload)
+        await updateSubscription(editId, payload, { effectiveFrom: effectiveFromDate })
       } else {
         await addSubscription(payload)
       }
@@ -217,12 +225,14 @@ export function SubscriptionsPage(): JSX.Element {
   function handleEdit(item: Subscription): void {
     setIsFormOpen(true)
     setEditId(item.id)
+    setEffectiveFromDate(todayString())
     setForm(toFormState(item))
   }
 
   function openAddForm(): void {
     setIsFormOpen(true)
     setEditId(null)
+    setEffectiveFromDate(todayString())
     setForm(buildDefaultForm())
     setFormError('')
     window.requestAnimationFrame(() => nameInputRef.current?.focus())
@@ -359,6 +369,12 @@ export function SubscriptionsPage(): JSX.Element {
                 {t('Startdatum', 'Start date')}
                 <input type="date" value={form.startDate} onChange={(event) => setForm((current) => ({ ...current, startDate: event.target.value }))} required />
               </label>
+              {editId ? (
+                <label>
+                  {t('Änderung wirksam ab', 'Change effective from')}
+                  <input type="date" value={effectiveFromDate} onChange={(event) => setEffectiveFromDate(event.target.value)} required />
+                </label>
+              ) : null}
               <label className="full-width">
                 {t('Notizen', 'Notes')}
                 <textarea className="subscription-notes-input" value={form.notes} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))} />
@@ -466,7 +482,7 @@ export function SubscriptionsPage(): JSX.Element {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((item) => (
+              {tableRows.map((item) => (
                 <tr key={item.id}>
                   <td>
                     <strong>{item.name}</strong>
@@ -505,7 +521,7 @@ export function SubscriptionsPage(): JSX.Element {
               ))}
             </tbody>
           </table>
-          {filtered.length === 0 ? <p className="empty-inline table-empty-message">{t('Keine Abos entsprechen den aktuellen Filtern.', 'No subscriptions match the current filters.')}</p> : null}
+          {tableRows.length === 0 ? <p className="empty-inline table-empty-message">{t('Keine Abos entsprechen den aktuellen Filtern.', 'No subscriptions match the current filters.')}</p> : null}
         </div>
       </article>
     </section>

@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import type { IncomeEntry } from '../types/models'
 import { materializeIncomeEntriesForRange, sumIncome } from './income'
 
@@ -35,5 +35,14 @@ describe('income recurring materialization', () => {
     const rows = materializeIncomeEntriesForRange([{ ...base, recurring: 'none' }], '2025-01-01', '2025-12-31')
     expect(rows).toHaveLength(1)
   })
-})
 
+  it('stops recurring entries at endDate', () => {
+    const rows = materializeIncomeEntriesForRange(
+      [{ ...base, recurring: 'monthly', endDate: '2025-02-20', amount: 100 }],
+      '2025-01-01',
+      '2025-04-30',
+    )
+    expect(rows.map((row) => row.date)).toEqual(['2025-02-15', '2025-01-15'])
+    expect(sumIncome(rows)).toBe(200)
+  })
+})

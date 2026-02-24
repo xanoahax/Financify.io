@@ -11,15 +11,32 @@ import {
 } from '../data/settingsStore'
 import {
   clearRepositoryCache,
+  listHouseholdCostSplits,
+  listHouseholdCosts,
+  listHouseholdMembers,
+  listHouseholdPayers,
+  listHouseholds,
   listIncomeEntries,
   listInterestScenarios,
   listSubscriptions,
+  removeHouseholdCost,
+  removeHouseholdPayer,
   removeIncomeEntry,
   removeInterestScenario,
   removeSubscription,
+  replaceHouseholdCostSplits,
+  replaceHouseholdCosts,
+  replaceHouseholdMembers,
+  replaceHouseholdPayers,
+  replaceHouseholds,
   replaceIncomeEntries,
   replaceInterestScenarios,
   replaceSubscriptions,
+  saveHouseholdCost,
+  saveHouseholdCostSplit,
+  saveHouseholdMember,
+  saveHouseholdPayer,
+  saveHousehold,
   saveIncomeEntry,
   saveInterestScenario,
   saveSubscription,
@@ -33,6 +50,11 @@ import {
 } from '../data/profileStore'
 import type {
   AppBackup,
+  Household,
+  HouseholdCost,
+  HouseholdCostSplit,
+  HouseholdMember,
+  HouseholdPayer,
   IncomeEntry,
   InterestScenario,
   InterestScenarioInput,
@@ -65,6 +87,7 @@ import {
   uniqueById,
 } from './appContextHelpers'
 import { useAppUpdates } from './useAppUpdates'
+import { addDays, compareDateStrings } from '../utils/date'
 
 export interface OnboardingSetupInput {
   language: Settings['language']
@@ -89,6 +112,11 @@ export interface AppContextValue {
   subscriptions: Subscription[]
   incomeEntries: IncomeEntry[]
   scenarios: InterestScenario[]
+  households: Household[]
+  householdMembers: HouseholdMember[]
+  householdPayers: HouseholdPayer[]
+  householdCosts: HouseholdCost[]
+  householdCostSplits: HouseholdCostSplit[]
   settings: Settings
   backgroundImageDataUrl: string | null
   uiState: UiState
@@ -120,14 +148,41 @@ export interface AppContextValue {
   unlockActiveProfile: (authSecret: string) => Promise<void>
   lockActiveProfile: () => void
   addSubscription: (payload: Omit<Subscription, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>
-  updateSubscription: (id: string, payload: Partial<Subscription>) => Promise<void>
+  updateSubscription: (
+    id: string,
+    payload: Partial<Subscription>,
+    options?: { effectiveFrom?: string },
+  ) => Promise<void>
   deleteSubscription: (id: string) => Promise<void>
   addIncomeEntry: (payload: Omit<IncomeEntry, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>
-  updateIncomeEntry: (id: string, payload: Partial<IncomeEntry>) => Promise<void>
+  updateIncomeEntry: (
+    id: string,
+    payload: Partial<IncomeEntry>,
+    options?: { effectiveFrom?: string },
+  ) => Promise<void>
   deleteIncomeEntry: (id: string) => Promise<void>
   addScenario: (payload: InterestScenarioInput) => Promise<void>
   updateScenario: (id: string, payload: InterestScenarioInput) => Promise<void>
   deleteScenario: (id: string) => Promise<void>
+  addHousehold: (payload: Omit<Household, 'id' | 'isArchived' | 'createdAt' | 'updatedAt'>) => Promise<void>
+  updateHousehold: (id: string, payload: Partial<Household>) => Promise<void>
+  deleteHousehold: (id: string) => Promise<void>
+  addHouseholdMember: (payload: Omit<HouseholdMember, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>
+  updateHouseholdMember: (id: string, payload: Partial<HouseholdMember>) => Promise<void>
+  deleteHouseholdMember: (id: string) => Promise<void>
+  addHouseholdPayer: (payload: Omit<HouseholdPayer, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>
+  deleteHouseholdPayer: (id: string) => Promise<void>
+  addHouseholdCost: (
+    payload: Omit<HouseholdCost, 'id' | 'createdAt' | 'updatedAt'>,
+    splits?: Array<Omit<HouseholdCostSplit, 'id' | 'costId'>>,
+  ) => Promise<void>
+  updateHouseholdCost: (
+    id: string,
+    payload: Partial<HouseholdCost>,
+    splits?: Array<Omit<HouseholdCostSplit, 'id' | 'costId'>>,
+    options?: { effectiveFrom?: string },
+  ) => Promise<void>
+  deleteHouseholdCost: (id: string) => Promise<void>
   exportBackup: () => AppBackup
   importBackup: (payload: AppBackup, mode: 'replace' | 'merge') => Promise<void>
   clearAllData: () => Promise<void>
@@ -159,6 +214,11 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([])
   const [incomeEntries, setIncomeEntries] = useState<IncomeEntry[]>([])
   const [scenarios, setScenarios] = useState<InterestScenario[]>([])
+  const [households, setHouseholds] = useState<Household[]>([])
+  const [householdMembers, setHouseholdMembers] = useState<HouseholdMember[]>([])
+  const [householdPayers, setHouseholdPayers] = useState<HouseholdPayer[]>([])
+  const [householdCosts, setHouseholdCosts] = useState<HouseholdCost[]>([])
+  const [householdCostSplits, setHouseholdCostSplits] = useState<HouseholdCostSplit[]>([])
   const [toasts, setToasts] = useState<ToastMessage[]>([])
   const [skippedUpdateVersion, setSkippedUpdateVersion] = useState<string>(initialPersistedPreferences.skippedUpdateVersion)
   const [isActiveProfileUnlocked, setIsActiveProfileUnlocked] = useState(false)
@@ -230,11 +290,38 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       setLoading(true)
       setHydratedProfileId('')
       try {
-        const [loadedSubscriptions, loadedIncomeEntries, loadedScenarios] = await Promise.all([
+        const [loadedSubscriptions, loadedIncomeEntries, loadedScenarios, loadedHouseholds, loadedHouseholdMembers, loadedHouseholdPayers, loadedHouseholdCosts, loadedHouseholdCostSplits] = await Promise.all([
           listSubscriptions(activeProfileId),
           listIncomeEntries(activeProfileId),
           listInterestScenarios(activeProfileId),
+          listHouseholds(activeProfileId),
+          listHouseholdMembers(activeProfileId),
+          listHouseholdPayers(activeProfileId),
+          listHouseholdCosts(activeProfileId),
+          listHouseholdCostSplits(activeProfileId),
         ])
+        const normalizedCosts = loadedHouseholdCosts.map((cost) => ({ ...cost, payerId: cost.payerId ?? null }))
+        const normalizedPayers = loadedHouseholdPayers.map((payer) => ({
+          ...payer,
+          type: payer.type === 'external' ? ('external' as const) : ('resident' as const),
+          linkedMemberId: payer.linkedMemberId ?? '',
+        }))
+        const payerByLinkedMember = new Set(normalizedPayers.filter((payer) => payer.type === 'resident' && payer.linkedMemberId).map((payer) => payer.linkedMemberId))
+        const generatedResidentPayers: HouseholdPayer[] = loadedHouseholdMembers
+          .filter((member) => !payerByLinkedMember.has(member.id))
+          .map((member) => ({
+            id: makeId(),
+            householdId: member.householdId,
+            name: member.name,
+            type: 'resident',
+            linkedMemberId: member.id,
+            createdAt: member.createdAt,
+            updatedAt: member.updatedAt,
+          }))
+        const hydratedPayers = [...normalizedPayers, ...generatedResidentPayers]
+        if (generatedResidentPayers.length > 0) {
+          await replaceHouseholdPayers(activeProfileId, hydratedPayers)
+        }
         if (!mounted) {
           return
         }
@@ -246,6 +333,11 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
         setSubscriptions(loadedSubscriptions)
         setIncomeEntries(loadedIncomeEntries)
         setScenarios(loadedScenarios)
+        setHouseholds(loadedHouseholds)
+        setHouseholdMembers(loadedHouseholdMembers)
+        setHouseholdPayers(hydratedPayers)
+        setHouseholdCosts(normalizedCosts)
+        setHouseholdCostSplits(loadedHouseholdCostSplits)
         setProfilesState((current) => {
           const timestamp = nowIso()
           const next = current.map((profile) =>
@@ -409,6 +501,11 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
         replaceSubscriptions(profileId, []),
         replaceIncomeEntries(profileId, []),
         replaceInterestScenarios(profileId, []),
+        replaceHouseholds(profileId, []),
+        replaceHouseholdMembers(profileId, []),
+        replaceHouseholdPayers(profileId, []),
+        replaceHouseholdCosts(profileId, []),
+        replaceHouseholdCostSplits(profileId, []),
       ])
       clearPersistedPreferences(profileId)
       await deleteProfileDb(profileId)
@@ -703,7 +800,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
   )
 
   const updateSubscription = useCallback(
-    async (id: string, payload: Partial<Subscription>) => {
+    async (id: string, payload: Partial<Subscription>, options?: { effectiveFrom?: string }) => {
       if (!activeProfileId) {
         return
       }
@@ -711,13 +808,56 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       if (!existing) {
         throw new Error(tx(settings.language, 'Abo nicht gefunden.', 'Subscription not found.'))
       }
+      const timestamp = nowIso()
       const merged: Subscription = {
         ...existing,
         ...payload,
         tags: payload.tags ? normalizeTags(payload.tags) : existing.tags,
-        updatedAt: nowIso(),
+        updatedAt: timestamp,
       }
       ensurePositiveNumber(merged.amount, tx(settings.language, 'Abo-Betrag', 'Subscription amount'), settings.language)
+      const effectiveFrom = options?.effectiveFrom
+      const hasCostImpactChange =
+        (payload.amount !== undefined && payload.amount !== existing.amount) ||
+        (payload.interval !== undefined && payload.interval !== existing.interval) ||
+        (payload.customIntervalMonths !== undefined && payload.customIntervalMonths !== existing.customIntervalMonths) ||
+        (payload.name !== undefined && payload.name !== existing.name) ||
+        (payload.category !== undefined && payload.category !== existing.category)
+      const canSplitHistory =
+        Boolean(effectiveFrom) &&
+        hasCostImpactChange &&
+        (merged.status === 'active' || merged.status === 'paused') &&
+        compareDateStrings(effectiveFrom as string, existing.startDate) > 0 &&
+        (!existing.endDate || compareDateStrings(effectiveFrom as string, existing.endDate) <= 0)
+
+      if (canSplitHistory) {
+        const effective = effectiveFrom as string
+        const previousSegment: Subscription = {
+          ...existing,
+          endDate: addDays(effective, -1),
+          updatedAt: timestamp,
+        }
+        const nextEndDate = merged.endDate && compareDateStrings(merged.endDate, effective) >= 0 ? merged.endDate : undefined
+        const nextSegment: Subscription = {
+          ...merged,
+          id: makeId(),
+          startDate: effective,
+          endDate: nextEndDate,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        }
+        const nextSubscriptions = [nextSegment, previousSegment, ...subscriptions.filter((item) => item.id !== id)].sort((a, b) =>
+          b.updatedAt.localeCompare(a.updatedAt),
+        )
+        await replaceSubscriptions(activeProfileId, nextSubscriptions)
+        setSubscriptions(nextSubscriptions)
+        pushToast({
+          tone: 'success',
+          text: tx(settings.language, 'Abo-Änderung ab gewähltem Monat gespeichert.', 'Subscription change saved from selected month.'),
+        })
+        return
+      }
+
       await saveSubscription(activeProfileId, merged)
       setSubscriptions((current) => current.map((item) => (item.id === id ? merged : item)))
       pushToast({ tone: 'success', text: tx(settings.language, 'Abo aktualisiert.', 'Subscription updated.') })
@@ -761,6 +901,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       const next: IncomeEntry = {
         ...payload,
         id: makeId(),
+        endDate: payload.endDate || undefined,
         tags: normalizeTags(payload.tags),
         createdAt: timestamp,
         updatedAt: timestamp,
@@ -773,7 +914,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
   )
 
   const updateIncomeEntry = useCallback(
-    async (id: string, payload: Partial<IncomeEntry>) => {
+    async (id: string, payload: Partial<IncomeEntry>, options?: { effectiveFrom?: string }) => {
       if (!activeProfileId) {
         return
       }
@@ -781,13 +922,56 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       if (!existing) {
         throw new Error(tx(settings.language, 'Einkommenseintrag nicht gefunden.', 'Income entry not found.'))
       }
+      const timestamp = nowIso()
       const merged: IncomeEntry = {
         ...existing,
         ...payload,
+        endDate: payload.endDate !== undefined ? payload.endDate || undefined : existing.endDate,
         tags: payload.tags ? normalizeTags(payload.tags) : existing.tags,
-        updatedAt: nowIso(),
+        updatedAt: timestamp,
       }
       ensurePositiveNumber(merged.amount, tx(settings.language, 'Einkommensbetrag', 'Income amount'), settings.language)
+      const effectiveFrom = options?.effectiveFrom
+      const hasRecurringImpactChange =
+        (payload.amount !== undefined && payload.amount !== existing.amount) ||
+        (payload.source !== undefined && payload.source !== existing.source) ||
+        (payload.recurring !== undefined && payload.recurring !== existing.recurring) ||
+        (payload.recurringIntervalDays !== undefined && payload.recurringIntervalDays !== existing.recurringIntervalDays)
+      const canSplitHistory =
+        Boolean(effectiveFrom) &&
+        hasRecurringImpactChange &&
+        existing.recurring !== 'none' &&
+        compareDateStrings(effectiveFrom as string, existing.date) > 0 &&
+        (!existing.endDate || compareDateStrings(effectiveFrom as string, existing.endDate) <= 0)
+
+      if (canSplitHistory) {
+        const effective = effectiveFrom as string
+        const previousSegment: IncomeEntry = {
+          ...existing,
+          endDate: addDays(effective, -1),
+          updatedAt: timestamp,
+        }
+        const nextEndDate = merged.endDate && compareDateStrings(merged.endDate, effective) >= 0 ? merged.endDate : undefined
+        const nextSegment: IncomeEntry = {
+          ...merged,
+          id: makeId(),
+          date: effective,
+          endDate: nextEndDate,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        }
+        const nextIncomeEntries = [nextSegment, previousSegment, ...incomeEntries.filter((item) => item.id !== id)].sort((a, b) =>
+          b.date.localeCompare(a.date),
+        )
+        await replaceIncomeEntries(activeProfileId, nextIncomeEntries)
+        setIncomeEntries(nextIncomeEntries)
+        pushToast({
+          tone: 'success',
+          text: tx(settings.language, 'Einkommensänderung ab gewähltem Monat gespeichert.', 'Income change saved from selected month.'),
+        })
+        return
+      }
+
       await saveIncomeEntry(activeProfileId, merged)
       setIncomeEntries((current) => current.map((item) => (item.id === id ? merged : item)))
       pushToast({ tone: 'success', text: tx(settings.language, 'Einkommenseintrag aktualisiert.', 'Income entry updated.') })
@@ -866,6 +1050,516 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
     [activeProfileId, pushToast, settings.language],
   )
 
+  const addHousehold = useCallback(
+    async (payload: Omit<Household, 'id' | 'isArchived' | 'createdAt' | 'updatedAt'>) => {
+      if (!activeProfileId) {
+        return
+      }
+      const name = payload.name.trim()
+      if (!name) {
+        throw new Error(tx(settings.language, 'Haushaltsname ist erforderlich.', 'Household name is required.'))
+      }
+      const timestamp = nowIso()
+      const next: Household = {
+        id: makeId(),
+        name,
+        type: payload.type,
+        currency: normalizeCurrency(payload.currency),
+        billingStart: payload.billingStart,
+        isArchived: false,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }
+      await saveHousehold(activeProfileId, next)
+      setHouseholds((current) => [next, ...current])
+      pushToast({ tone: 'success', text: tx(settings.language, 'Haushalt gespeichert.', 'Household saved.') })
+    },
+    [activeProfileId, pushToast, settings.language],
+  )
+
+  const updateHousehold = useCallback(
+    async (id: string, payload: Partial<Household>) => {
+      if (!activeProfileId) {
+        return
+      }
+      const existing = households.find((item) => item.id === id)
+      if (!existing) {
+        throw new Error(tx(settings.language, 'Haushalt nicht gefunden.', 'Household not found.'))
+      }
+      const name = payload.name !== undefined ? payload.name.trim() : existing.name
+      if (!name) {
+        throw new Error(tx(settings.language, 'Haushaltsname ist erforderlich.', 'Household name is required.'))
+      }
+      const merged: Household = {
+        ...existing,
+        ...payload,
+        name,
+        currency: payload.currency !== undefined ? normalizeCurrency(payload.currency) : existing.currency,
+        updatedAt: nowIso(),
+      }
+      await saveHousehold(activeProfileId, merged)
+      setHouseholds((current) => current.map((item) => (item.id === id ? merged : item)))
+      pushToast({ tone: 'success', text: tx(settings.language, 'Haushalt aktualisiert.', 'Household updated.') })
+    },
+    [activeProfileId, households, pushToast, settings.language],
+  )
+
+  const deleteHousehold = useCallback(
+    async (id: string) => {
+      if (!activeProfileId) {
+        return
+      }
+      if (!households.some((item) => item.id === id)) {
+        return
+      }
+      const relatedCostIds = new Set(householdCosts.filter((cost) => cost.householdId === id).map((cost) => cost.id))
+      const nextHouseholds = households.filter((item) => item.id !== id)
+      const nextMembers = householdMembers.filter((member) => member.householdId !== id)
+      const nextPayers = householdPayers.filter((payer) => payer.householdId !== id)
+      const nextCosts = householdCosts.filter((cost) => cost.householdId !== id)
+      const nextSplits = householdCostSplits.filter((split) => !relatedCostIds.has(split.costId))
+      await Promise.all([
+        replaceHouseholds(activeProfileId, nextHouseholds),
+        replaceHouseholdMembers(activeProfileId, nextMembers),
+        replaceHouseholdPayers(activeProfileId, nextPayers),
+        replaceHouseholdCosts(activeProfileId, nextCosts),
+        replaceHouseholdCostSplits(activeProfileId, nextSplits),
+      ])
+      setHouseholds(nextHouseholds)
+      setHouseholdMembers(nextMembers)
+      setHouseholdPayers(nextPayers)
+      setHouseholdCosts(nextCosts)
+      setHouseholdCostSplits(nextSplits)
+      pushToast({ tone: 'success', text: tx(settings.language, 'Haushalt gelöscht.', 'Household deleted.') })
+    },
+    [activeProfileId, householdCostSplits, householdCosts, householdMembers, householdPayers, households, pushToast, settings.language],
+  )
+
+  const addHouseholdMember = useCallback(
+    async (payload: Omit<HouseholdMember, 'id' | 'createdAt' | 'updatedAt'>) => {
+      if (!activeProfileId) {
+        return
+      }
+      if (!households.some((item) => item.id === payload.householdId)) {
+        throw new Error(tx(settings.language, 'Haushalt nicht gefunden.', 'Household not found.'))
+      }
+      const name = payload.name.trim()
+      if (!name) {
+        throw new Error(tx(settings.language, 'Name ist erforderlich.', 'Name is required.'))
+      }
+      const timestamp = nowIso()
+      const next: HouseholdMember = {
+        id: makeId(),
+        ...payload,
+        name,
+        role: payload.role.trim(),
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }
+      const residentPayer: HouseholdPayer = {
+        id: makeId(),
+        householdId: payload.householdId,
+        name,
+        type: 'resident',
+        linkedMemberId: next.id,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }
+      await Promise.all([saveHouseholdMember(activeProfileId, next), saveHouseholdPayer(activeProfileId, residentPayer)])
+      setHouseholdMembers((current) => [next, ...current])
+      setHouseholdPayers((current) => [residentPayer, ...current])
+      pushToast({ tone: 'success', text: tx(settings.language, 'Mitglied gespeichert.', 'Member saved.') })
+    },
+    [activeProfileId, households, pushToast, settings.language],
+  )
+
+  const updateHouseholdMember = useCallback(
+    async (id: string, payload: Partial<HouseholdMember>) => {
+      if (!activeProfileId) {
+        return
+      }
+      const existing = householdMembers.find((item) => item.id === id)
+      if (!existing) {
+        throw new Error(tx(settings.language, 'Mitglied nicht gefunden.', 'Member not found.'))
+      }
+      const name = payload.name !== undefined ? payload.name.trim() : existing.name
+      if (!name) {
+        throw new Error(tx(settings.language, 'Name ist erforderlich.', 'Name is required.'))
+      }
+      const merged: HouseholdMember = {
+        ...existing,
+        ...payload,
+        name,
+        role: payload.role !== undefined ? payload.role.trim() : existing.role,
+        activeTo: payload.isActive === false && payload.activeTo === undefined ? nowIso().slice(0, 10) : (payload.activeTo ?? existing.activeTo),
+        updatedAt: nowIso(),
+      }
+      const syncedPayers = householdPayers.map((payer) =>
+        payer.type === 'resident' && payer.linkedMemberId === id ? { ...payer, name: merged.name, updatedAt: merged.updatedAt } : payer,
+      )
+      await Promise.all([saveHouseholdMember(activeProfileId, merged), replaceHouseholdPayers(activeProfileId, syncedPayers)])
+      setHouseholdMembers((current) => current.map((item) => (item.id === id ? merged : item)))
+      setHouseholdPayers(syncedPayers)
+      pushToast({ tone: 'success', text: tx(settings.language, 'Mitglied aktualisiert.', 'Member updated.') })
+    },
+    [activeProfileId, householdMembers, householdPayers, pushToast, settings.language],
+  )
+
+  const deleteHouseholdMember = useCallback(
+    async (id: string) => {
+      if (!activeProfileId) {
+        return
+      }
+      const existing = householdMembers.find((item) => item.id === id)
+      if (!existing) {
+        return
+      }
+      const nextMembers = householdMembers.filter((item) => item.id !== id)
+      const timestamp = nowIso()
+      const nextCosts = householdCosts.map((cost) =>
+        cost.responsibleMemberId === id ? { ...cost, responsibleMemberId: null, updatedAt: timestamp } : cost,
+      )
+      const removedPayerIds = new Set(householdPayers.filter((payer) => payer.linkedMemberId === id).map((payer) => payer.id))
+      const nextPayers = householdPayers.filter((payer) => payer.linkedMemberId !== id)
+      const nextCostsWithPayerCleanup = nextCosts.map((cost) =>
+        cost.payerId && removedPayerIds.has(cost.payerId) ? { ...cost, payerId: null, updatedAt: timestamp } : cost,
+      )
+      const nextSplits = householdCostSplits.filter((split) => split.memberId !== id)
+      await Promise.all([
+        replaceHouseholdMembers(activeProfileId, nextMembers),
+        replaceHouseholdPayers(activeProfileId, nextPayers),
+        replaceHouseholdCosts(activeProfileId, nextCostsWithPayerCleanup),
+        replaceHouseholdCostSplits(activeProfileId, nextSplits),
+      ])
+      setHouseholdMembers(nextMembers)
+      setHouseholdPayers(nextPayers)
+      setHouseholdCosts(nextCostsWithPayerCleanup)
+      setHouseholdCostSplits(nextSplits)
+      pushToast({ tone: 'success', text: tx(settings.language, 'Mitglied gelöscht.', 'Member deleted.') })
+    },
+    [activeProfileId, householdCostSplits, householdCosts, householdMembers, householdPayers, pushToast, settings.language],
+  )
+
+  const addHouseholdPayer = useCallback(
+    async (payload: Omit<HouseholdPayer, 'id' | 'createdAt' | 'updatedAt'>) => {
+      if (!activeProfileId) {
+        return
+      }
+      if (!households.some((item) => item.id === payload.householdId)) {
+        throw new Error(tx(settings.language, 'Haushalt nicht gefunden.', 'Household not found.'))
+      }
+      const name = payload.name.trim()
+      if (!name) {
+        throw new Error(tx(settings.language, 'Name ist erforderlich.', 'Name is required.'))
+      }
+      if (payload.type === 'resident') {
+        if (!payload.linkedMemberId || !householdMembers.some((member) => member.id === payload.linkedMemberId && member.householdId === payload.householdId)) {
+          throw new Error(tx(settings.language, 'Mitglied für Zahler nicht gefunden.', 'Member for payer not found.'))
+        }
+      }
+      const timestamp = nowIso()
+      const next: HouseholdPayer = {
+        id: makeId(),
+        householdId: payload.householdId,
+        name,
+        type: payload.type,
+        linkedMemberId: payload.linkedMemberId ?? '',
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }
+      await saveHouseholdPayer(activeProfileId, next)
+      setHouseholdPayers((current) => [next, ...current])
+      pushToast({ tone: 'success', text: tx(settings.language, 'Zahler gespeichert.', 'Payer saved.') })
+    },
+    [activeProfileId, householdMembers, households, pushToast, settings.language],
+  )
+
+  const deleteHouseholdPayer = useCallback(
+    async (id: string) => {
+      if (!activeProfileId) {
+        return
+      }
+      const existing = householdPayers.find((payer) => payer.id === id)
+      if (!existing) {
+        return
+      }
+      if (existing.type === 'resident') {
+        throw new Error(tx(settings.language, 'Bewohner-Zahler können nicht manuell gelöscht werden.', 'Resident payers cannot be deleted manually.'))
+      }
+      const timestamp = nowIso()
+      const nextPayers = householdPayers.filter((payer) => payer.id !== id)
+      const nextCosts = householdCosts.map((cost) =>
+        cost.payerId === id ? { ...cost, payerId: null, updatedAt: timestamp } : cost,
+      )
+      await Promise.all([removeHouseholdPayer(activeProfileId, id), replaceHouseholdCosts(activeProfileId, nextCosts)])
+      setHouseholdPayers(nextPayers)
+      setHouseholdCosts(nextCosts)
+      pushToast({ tone: 'success', text: tx(settings.language, 'Zahler gelöscht.', 'Payer deleted.') })
+    },
+    [activeProfileId, householdCosts, householdPayers, pushToast, settings.language],
+  )
+
+  const addHouseholdCost = useCallback(
+    async (
+      payload: Omit<HouseholdCost, 'id' | 'createdAt' | 'updatedAt'>,
+      splits: Array<Omit<HouseholdCostSplit, 'id' | 'costId'>> = [],
+    ) => {
+      if (!activeProfileId) {
+        return
+      }
+      if (!households.some((item) => item.id === payload.householdId)) {
+        throw new Error(tx(settings.language, 'Haushalt nicht gefunden.', 'Household not found.'))
+      }
+      const title = payload.title.trim()
+      if (!title) {
+        throw new Error(tx(settings.language, 'Kosten-Titel ist erforderlich.', 'Cost title is required.'))
+      }
+      const category = payload.category.trim()
+      const subcategory = payload.subcategory.trim()
+      if (!category || !subcategory) {
+        throw new Error(tx(settings.language, 'Kategorie und Unterkategorie sind erforderlich.', 'Category and subcategory are required.'))
+      }
+      ensurePositiveNumber(payload.amount, tx(settings.language, 'Kostenbetrag', 'Cost amount'), settings.language)
+      const timestamp = nowIso()
+      const next: HouseholdCost = {
+        ...payload,
+        id: makeId(),
+        title,
+        category,
+        subcategory,
+        notes: payload.notes.trim(),
+        endDate: payload.endDate || null,
+        payerId: payload.payerId || null,
+        responsibleMemberId: payload.responsibleMemberId || null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }
+      const selectedPayer = next.payerId ? householdPayers.find((payer) => payer.id === next.payerId && payer.householdId === next.householdId) : null
+      if (next.payerId && !selectedPayer) {
+        throw new Error(tx(settings.language, 'Zahler nicht gefunden.', 'Payer not found.'))
+      }
+
+      const activeMembers = householdMembers.filter((member) => member.householdId === next.householdId && member.isActive)
+      const activeMemberIds = new Set(activeMembers.map((member) => member.id))
+      const requiresSplitRows = next.isShared && next.splitType !== 'equal'
+      let preparedSplits: HouseholdCostSplit[] = []
+      if (next.isShared && activeMembers.length === 0) {
+        throw new Error(tx(settings.language, 'Keine aktiven Mitglieder für die Aufteilung vorhanden.', 'No active members available for splitting.'))
+      }
+      if (requiresSplitRows) {
+        const seen = new Set<string>()
+        preparedSplits = splits.map((split) => ({
+          id: makeId(),
+          costId: next.id,
+          memberId: split.memberId,
+          sharePercent: split.sharePercent ?? null,
+          shareAmount: split.shareAmount ?? null,
+        }))
+        if (preparedSplits.length === 0) {
+          throw new Error(tx(settings.language, 'Bitte gib eine Kostenaufteilung ein.', 'Please provide a cost split.'))
+        }
+        for (const split of preparedSplits) {
+          if (!activeMemberIds.has(split.memberId) || seen.has(split.memberId)) {
+            throw new Error(tx(settings.language, 'Ungültige Kostenaufteilung.', 'Invalid cost split.'))
+          }
+          seen.add(split.memberId)
+        }
+        if (next.splitType === 'fixed_amount') {
+          const total = preparedSplits.reduce((sum, split) => sum + (Number(split.shareAmount) || 0), 0)
+          if (Math.abs(total - next.amount) > 0.01) {
+            throw new Error(tx(settings.language, 'Fixbeträge müssen in Summe dem Gesamtbetrag entsprechen.', 'Fixed amounts must sum to the total amount.'))
+          }
+        } else {
+          const total = preparedSplits.reduce((sum, split) => sum + (Number(split.sharePercent) || 0), 0)
+          if (Math.abs(total - 100) > 0.01) {
+            throw new Error(tx(settings.language, 'Prozentanteile müssen in Summe 100% ergeben.', 'Percent shares must sum to 100%.'))
+          }
+        }
+      }
+
+      await saveHouseholdCost(activeProfileId, next)
+      if (preparedSplits.length > 0) {
+        for (const split of preparedSplits) {
+          await saveHouseholdCostSplit(activeProfileId, split)
+        }
+      }
+      setHouseholdCosts((current) => [next, ...current])
+      if (preparedSplits.length > 0) {
+        setHouseholdCostSplits((current) => [...preparedSplits, ...current])
+      }
+      pushToast({ tone: 'success', text: tx(settings.language, 'Haushaltskosten gespeichert.', 'Household cost saved.') })
+    },
+    [activeProfileId, householdMembers, householdPayers, households, pushToast, settings.language],
+  )
+
+  const updateHouseholdCost = useCallback(
+    async (
+      id: string,
+      payload: Partial<HouseholdCost>,
+      splits: Array<Omit<HouseholdCostSplit, 'id' | 'costId'>> = [],
+      options?: { effectiveFrom?: string },
+    ) => {
+      if (!activeProfileId) {
+        return
+      }
+      const existing = householdCosts.find((item) => item.id === id)
+      if (!existing) {
+        throw new Error(tx(settings.language, 'Haushaltskosten nicht gefunden.', 'Household cost not found.'))
+      }
+      const timestamp = nowIso()
+      const merged: HouseholdCost = {
+        ...existing,
+        ...payload,
+        title: payload.title !== undefined ? payload.title.trim() : existing.title,
+        category: payload.category !== undefined ? payload.category.trim() : existing.category,
+        subcategory: payload.subcategory !== undefined ? payload.subcategory.trim() : existing.subcategory,
+        notes: payload.notes !== undefined ? payload.notes.trim() : existing.notes,
+        endDate: payload.endDate !== undefined ? payload.endDate || null : existing.endDate,
+        payerId: payload.payerId !== undefined ? payload.payerId || null : existing.payerId,
+        responsibleMemberId:
+          payload.responsibleMemberId !== undefined
+            ? payload.responsibleMemberId || null
+            : existing.responsibleMemberId,
+        updatedAt: timestamp,
+      }
+      if (!merged.title || !merged.category || !merged.subcategory) {
+        throw new Error(tx(settings.language, 'Titel, Kategorie und Unterkategorie sind erforderlich.', 'Title, category, and subcategory are required.'))
+      }
+      ensurePositiveNumber(merged.amount, tx(settings.language, 'Kostenbetrag', 'Cost amount'), settings.language)
+      const selectedPayer = merged.payerId ? householdPayers.find((payer) => payer.id === merged.payerId && payer.householdId === merged.householdId) : null
+      if (merged.payerId && !selectedPayer) {
+        throw new Error(tx(settings.language, 'Zahler nicht gefunden.', 'Payer not found.'))
+      }
+
+      const activeMembers = householdMembers.filter((member) => member.householdId === merged.householdId && member.isActive)
+      const activeMemberIds = new Set(activeMembers.map((member) => member.id))
+      const shouldUseSplitRows = merged.isShared && merged.splitType !== 'equal'
+      let preparedSplits: HouseholdCostSplit[] = []
+      if (merged.isShared && activeMembers.length === 0) {
+        throw new Error(tx(settings.language, 'Keine aktiven Mitglieder für die Aufteilung vorhanden.', 'No active members available for splitting.'))
+      }
+      if (shouldUseSplitRows) {
+        const seen = new Set<string>()
+        preparedSplits = splits.map((split) => ({
+          id: makeId(),
+          costId: id,
+          memberId: split.memberId,
+          sharePercent: split.sharePercent ?? null,
+          shareAmount: split.shareAmount ?? null,
+        }))
+        if (preparedSplits.length === 0) {
+          throw new Error(tx(settings.language, 'Bitte gib eine Kostenaufteilung ein.', 'Please provide a cost split.'))
+        }
+        for (const split of preparedSplits) {
+          if (!activeMemberIds.has(split.memberId) || seen.has(split.memberId)) {
+            throw new Error(tx(settings.language, 'Ungültige Kostenaufteilung.', 'Invalid cost split.'))
+          }
+          seen.add(split.memberId)
+        }
+        if (merged.splitType === 'fixed_amount') {
+          const total = preparedSplits.reduce((sum, split) => sum + (Number(split.shareAmount) || 0), 0)
+          if (Math.abs(total - merged.amount) > 0.01) {
+            throw new Error(tx(settings.language, 'Fixbeträge müssen in Summe dem Gesamtbetrag entsprechen.', 'Fixed amounts must sum to the total amount.'))
+          }
+        } else {
+          const total = preparedSplits.reduce((sum, split) => sum + (Number(split.sharePercent) || 0), 0)
+          if (Math.abs(total - 100) > 0.01) {
+            throw new Error(tx(settings.language, 'Prozentanteile müssen in Summe 100% ergeben.', 'Percent shares must sum to 100%.'))
+          }
+        }
+      }
+
+      const effectiveFrom = options?.effectiveFrom
+      const hasCostImpactChange =
+        (payload.amount !== undefined && payload.amount !== existing.amount) ||
+        (payload.frequency !== undefined && payload.frequency !== existing.frequency) ||
+        (payload.category !== undefined && payload.category !== existing.category) ||
+        (payload.subcategory !== undefined && payload.subcategory !== existing.subcategory) ||
+        (payload.title !== undefined && payload.title !== existing.title) ||
+        (payload.isShared !== undefined && payload.isShared !== existing.isShared) ||
+        (payload.splitType !== undefined && payload.splitType !== existing.splitType) ||
+        (payload.payerId !== undefined && payload.payerId !== existing.payerId) ||
+        (payload.responsibleMemberId !== undefined && payload.responsibleMemberId !== existing.responsibleMemberId)
+      const canSplitHistory =
+        Boolean(effectiveFrom) &&
+        hasCostImpactChange &&
+        merged.status === 'active' &&
+        compareDateStrings(effectiveFrom as string, existing.startDate) > 0 &&
+        (!existing.endDate || compareDateStrings(effectiveFrom as string, existing.endDate) <= 0)
+
+      if (canSplitHistory) {
+        const effective = effectiveFrom as string
+        const nextId = makeId()
+        const previousSegment: HouseholdCost = {
+          ...existing,
+          endDate: addDays(effective, -1),
+          updatedAt: timestamp,
+        }
+        const nextEndDate = merged.endDate && compareDateStrings(merged.endDate, effective) >= 0 ? merged.endDate : null
+        const nextSegment: HouseholdCost = {
+          ...merged,
+          id: nextId,
+          startDate: effective,
+          endDate: nextEndDate,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        }
+        const revisionSplits = shouldUseSplitRows
+          ? preparedSplits.map((split) => ({
+              ...split,
+              id: makeId(),
+              costId: nextId,
+            }))
+          : []
+        const nextCosts = [nextSegment, previousSegment, ...householdCosts.filter((item) => item.id !== id)].sort((a, b) =>
+          b.updatedAt.localeCompare(a.updatedAt),
+        )
+        const nextSplits = shouldUseSplitRows ? [...householdCostSplits, ...revisionSplits] : householdCostSplits
+        await Promise.all([replaceHouseholdCosts(activeProfileId, nextCosts), replaceHouseholdCostSplits(activeProfileId, nextSplits)])
+        setHouseholdCosts(nextCosts)
+        setHouseholdCostSplits(nextSplits)
+        pushToast({
+          tone: 'success',
+          text: tx(settings.language, 'Kostenänderung ab gewähltem Monat gespeichert.', 'Cost change saved from selected month.'),
+        })
+        return
+      }
+
+      await saveHouseholdCost(activeProfileId, merged)
+      setHouseholdCosts((current) => current.map((item) => (item.id === id ? merged : item)))
+
+      const currentWithoutCost = householdCostSplits.filter((split) => split.costId !== id)
+      if (shouldUseSplitRows) {
+        const nextSplits = [...currentWithoutCost, ...preparedSplits]
+        await replaceHouseholdCostSplits(activeProfileId, nextSplits)
+        setHouseholdCostSplits(nextSplits)
+      } else if (currentWithoutCost.length !== householdCostSplits.length) {
+        await replaceHouseholdCostSplits(activeProfileId, currentWithoutCost)
+        setHouseholdCostSplits(currentWithoutCost)
+      }
+
+      pushToast({ tone: 'success', text: tx(settings.language, 'Haushaltskosten aktualisiert.', 'Household cost updated.') })
+    },
+    [activeProfileId, householdCostSplits, householdCosts, householdMembers, householdPayers, pushToast, settings.language],
+  )
+
+  const deleteHouseholdCost = useCallback(
+    async (id: string) => {
+      if (!activeProfileId) {
+        return
+      }
+      if (!householdCosts.some((item) => item.id === id)) {
+        return
+      }
+      const nextSplits = householdCostSplits.filter((split) => split.costId !== id)
+      await Promise.all([removeHouseholdCost(activeProfileId, id), replaceHouseholdCostSplits(activeProfileId, nextSplits)])
+      setHouseholdCosts((current) => current.filter((item) => item.id !== id))
+      setHouseholdCostSplits(nextSplits)
+      pushToast({ tone: 'success', text: tx(settings.language, 'Haushaltskosten gelöscht.', 'Household cost deleted.') })
+    },
+    [activeProfileId, householdCostSplits, householdCosts, pushToast, settings.language],
+  )
+
   const exportBackup = useCallback((): AppBackup => {
     if (isProfileLocked) {
       throw new Error(tx(settings.language, 'Profil ist gesperrt. Bitte zuerst entsperren.', 'Profile is locked. Please unlock first.'))
@@ -894,7 +1588,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
           authSecretHash: '',
         }
     return {
-      backupSchema: 2,
+      backupSchema: 3,
       exportedAt: nowIso(),
       scope: 'single-profile',
       activeProfileId,
@@ -906,9 +1600,29 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
         subscriptions,
         incomeEntries,
         interestScenarios: scenarios,
+        households,
+        householdMembers,
+        householdPayers,
+        householdCosts,
+        householdCostSplits,
       },
     }
-  }, [activeProfile, activeProfileId, backgroundImageDataUrl, incomeEntries, isProfileLocked, scenarios, settings, subscriptions, uiState])
+  }, [
+    activeProfile,
+    activeProfileId,
+    backgroundImageDataUrl,
+    householdCostSplits,
+    householdCosts,
+    householdMembers,
+    householdPayers,
+    households,
+    incomeEntries,
+    isProfileLocked,
+    scenarios,
+    settings,
+    subscriptions,
+    uiState,
+  ])
 
   const importBackup = useCallback(
     async (payload: AppBackup, mode: 'replace' | 'merge') => {
@@ -948,23 +1662,71 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
               subscriptions: payload.subscriptions ?? [],
               incomeEntries: payload.incomeEntries ?? [],
               interestScenarios: payload.interestScenarios ?? [],
+              households: payload.households ?? [],
+              householdMembers: payload.householdMembers ?? [],
+              householdPayers: payload.householdPayers ?? [],
+              householdCosts: payload.householdCosts ?? [],
+              householdCostSplits: payload.householdCostSplits ?? [],
             }
       const safeSubscriptions = Array.isArray(sourceProfile.subscriptions) ? sourceProfile.subscriptions : []
       const safeIncomeEntries = Array.isArray(sourceProfile.incomeEntries) ? sourceProfile.incomeEntries : []
       const safeScenarios = Array.isArray(sourceProfile.interestScenarios) ? sourceProfile.interestScenarios : []
+      const safeHouseholds = Array.isArray(sourceProfile.households) ? sourceProfile.households : []
+      const safeHouseholdMembers = Array.isArray(sourceProfile.householdMembers) ? sourceProfile.householdMembers : []
+      const safeHouseholdPayers = Array.isArray(sourceProfile.householdPayers)
+        ? sourceProfile.householdPayers.map((payer) => ({
+            ...payer,
+            type: payer.type === 'external' ? ('external' as const) : ('resident' as const),
+            linkedMemberId: payer.linkedMemberId ?? '',
+          }))
+        : []
+      const safeHouseholdCosts = Array.isArray(sourceProfile.householdCosts)
+        ? sourceProfile.householdCosts.map((cost) => ({ ...cost, payerId: cost.payerId ?? null }))
+        : []
+      const safeHouseholdCostSplits = Array.isArray(sourceProfile.householdCostSplits) ? sourceProfile.householdCostSplits : []
       const mergedSubscriptions = mode === 'replace' ? safeSubscriptions : uniqueById([...subscriptions, ...safeSubscriptions])
       const mergedIncome = mode === 'replace' ? safeIncomeEntries : uniqueById([...incomeEntries, ...safeIncomeEntries])
       const mergedScenarios = mode === 'replace' ? safeScenarios : uniqueById([...scenarios, ...safeScenarios])
+      const mergedHouseholds = mode === 'replace' ? safeHouseholds : uniqueById([...households, ...safeHouseholds])
+      const mergedHouseholdMembers = mode === 'replace' ? safeHouseholdMembers : uniqueById([...householdMembers, ...safeHouseholdMembers])
+      const mergedHouseholdPayers = mode === 'replace' ? safeHouseholdPayers : uniqueById([...householdPayers, ...safeHouseholdPayers])
+      const mergedHouseholdCosts = mode === 'replace' ? safeHouseholdCosts : uniqueById([...householdCosts, ...safeHouseholdCosts])
+      const mergedHouseholdCostSplits = mode === 'replace' ? safeHouseholdCostSplits : uniqueById([...householdCostSplits, ...safeHouseholdCostSplits])
+      const residentLinkedIds = new Set(
+        mergedHouseholdPayers.filter((payer) => payer.type === 'resident' && payer.linkedMemberId).map((payer) => payer.linkedMemberId),
+      )
+      const generatedResidentPayers: HouseholdPayer[] = mergedHouseholdMembers
+        .filter((member) => !residentLinkedIds.has(member.id))
+        .map((member) => ({
+          id: makeId(),
+          householdId: member.householdId,
+          name: member.name,
+          type: 'resident',
+          linkedMemberId: member.id,
+          createdAt: member.createdAt,
+          updatedAt: member.updatedAt,
+        }))
+      const mergedHouseholdPayersWithResidents = [...mergedHouseholdPayers, ...generatedResidentPayers]
 
       await Promise.all([
         replaceSubscriptions(activeProfileId, mergedSubscriptions),
         replaceIncomeEntries(activeProfileId, mergedIncome),
         replaceInterestScenarios(activeProfileId, mergedScenarios),
+        replaceHouseholds(activeProfileId, mergedHouseholds),
+        replaceHouseholdMembers(activeProfileId, mergedHouseholdMembers),
+        replaceHouseholdPayers(activeProfileId, mergedHouseholdPayersWithResidents),
+        replaceHouseholdCosts(activeProfileId, mergedHouseholdCosts),
+        replaceHouseholdCostSplits(activeProfileId, mergedHouseholdCostSplits),
       ])
 
       setSubscriptions(mergedSubscriptions)
       setIncomeEntries(mergedIncome)
       setScenarios(mergedScenarios)
+      setHouseholds(mergedHouseholds)
+      setHouseholdMembers(mergedHouseholdMembers)
+      setHouseholdPayers(mergedHouseholdPayersWithResidents)
+      setHouseholdCosts(mergedHouseholdCosts)
+      setHouseholdCostSplits(mergedHouseholdCostSplits)
       if (mode === 'replace') {
         const normalizedSettings = normalizeImportedSettings(sourceProfile.settings)
         const normalizedUiState = normalizeImportedUiState(sourceProfile.uiState)
@@ -986,7 +1748,21 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
             : tx(settings.language, 'Backup importiert (zusammenführen).', 'Backup imported (merge).'),
       })
     },
-    [activeProfile, activeProfileId, incomeEntries, isProfileLocked, pushToast, scenarios, settings.language, subscriptions],
+    [
+      activeProfile,
+      activeProfileId,
+      householdCostSplits,
+      householdCosts,
+      householdMembers,
+      householdPayers,
+      households,
+      incomeEntries,
+      isProfileLocked,
+      pushToast,
+      scenarios,
+      settings.language,
+      subscriptions,
+    ],
   )
 
   const clearAllData = useCallback(async () => {
@@ -1000,6 +1776,11 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       replaceSubscriptions(activeProfileId, []),
       replaceIncomeEntries(activeProfileId, []),
       replaceInterestScenarios(activeProfileId, []),
+      replaceHouseholds(activeProfileId, []),
+      replaceHouseholdMembers(activeProfileId, []),
+      replaceHouseholdPayers(activeProfileId, []),
+      replaceHouseholdCosts(activeProfileId, []),
+      replaceHouseholdCostSplits(activeProfileId, []),
     ])
     clearPersistedPreferences(activeProfileId)
     await deleteProfileDb(activeProfileId)
@@ -1009,6 +1790,11 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
     setSubscriptions([])
     setIncomeEntries([])
     setScenarios([])
+    setHouseholds([])
+    setHouseholdMembers([])
+    setHouseholdPayers([])
+    setHouseholdCosts([])
+    setHouseholdCostSplits([])
     setSettingsState(defaultSettings)
     setUiStateState(defaultUiState)
     setBackgroundImageDataUrlState(null)
@@ -1028,6 +1814,11 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       subscriptions,
       incomeEntries,
       scenarios,
+      households,
+      householdMembers,
+      householdPayers,
+      householdCosts,
+      householdCostSplits,
       settings,
       backgroundImageDataUrl,
       uiState,
@@ -1067,6 +1858,17 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       addScenario,
       updateScenario,
       deleteScenario,
+      addHousehold,
+      updateHousehold,
+      deleteHousehold,
+      addHouseholdMember,
+      updateHouseholdMember,
+      deleteHouseholdMember,
+      addHouseholdPayer,
+      deleteHouseholdPayer,
+      addHouseholdCost,
+      updateHouseholdCost,
+      deleteHouseholdCost,
       exportBackup,
       importBackup,
       clearAllData,
@@ -1078,6 +1880,10 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
     }),
     [
       addIncomeEntry,
+      addHousehold,
+      addHouseholdCost,
+      addHouseholdMember,
+      addHouseholdPayer,
       addScenario,
       addSubscription,
       activeProfile,
@@ -1089,6 +1895,10 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       createProfile,
       dismissUpdatePrompt,
       deleteIncomeEntry,
+      deleteHousehold,
+      deleteHouseholdCost,
+      deleteHouseholdMember,
+      deleteHouseholdPayer,
       deleteProfile,
       deleteScenario,
       deleteSubscription,
@@ -1097,6 +1907,11 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       exitOnboarding,
       exportBackup,
       importBackup,
+      householdCostSplits,
+      householdCosts,
+      householdMembers,
+      householdPayers,
+      households,
       incomeEntries,
       isCheckingForUpdates,
       isInstallingUpdate,
@@ -1124,6 +1939,9 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       updateCheckError,
       updatePrompt,
       updateIncomeEntry,
+      updateHousehold,
+      updateHouseholdCost,
+      updateHouseholdMember,
       updatesSupported,
       updateScenario,
       installUpdate,

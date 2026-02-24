@@ -99,6 +99,7 @@ function buildDefaultForm(sourceDefault: string): IncomeFormState {
   return {
     amount: Number.NaN,
     date: todayString(),
+    endDate: undefined,
     source: sourceDefault,
     tags: [],
     notes: '',
@@ -127,6 +128,7 @@ export function IncomePage(): JSX.Element {
   const [formMode, setFormMode] = useState<IncomeFormMode>('manual')
   const [shiftForm, setShiftForm] = useState<ShiftLogFormState>(buildDefaultShiftForm(resolvedDefaultShiftJobId))
   const [editId, setEditId] = useState<string | null>(null)
+  const [effectiveFromDate, setEffectiveFromDate] = useState(todayString())
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [tagInput, setTagInput] = useState('')
   const [viewMode, setViewMode] = useState<'month' | 'year'>('month')
@@ -180,6 +182,7 @@ export function IncomePage(): JSX.Element {
     setEditId(null)
     setFormMode('manual')
     setForm(buildDefaultForm(tx(settings.language, 'Gehalt', 'Salary')))
+    setEffectiveFromDate(todayString())
     setShiftForm(buildDefaultShiftForm(resolvedDefaultShiftJobId))
     setTagInput('')
     setFormError('')
@@ -197,6 +200,7 @@ export function IncomePage(): JSX.Element {
       setEditId(null)
       setFormMode('manual')
       setForm(buildDefaultForm(tx(settings.language, 'Gehalt', 'Salary')))
+      setEffectiveFromDate(todayString())
       setShiftForm(buildDefaultShiftForm(resolvedDefaultShiftJobId))
       setTagInput('')
       setFormError('')
@@ -376,11 +380,12 @@ export function IncomePage(): JSX.Element {
       const payload: IncomeFormState = {
         ...form,
         amount: Number(form.amount),
+        endDate: form.endDate || undefined,
         tags: parseTags(tagInput),
         recurringIntervalDays: form.recurring === 'custom' ? Number(form.recurringIntervalDays) : undefined,
       }
       if (editId) {
-        await updateIncomeEntry(editId, payload)
+        await updateIncomeEntry(editId, payload, { effectiveFrom: payload.recurring !== 'none' ? effectiveFromDate : undefined })
       } else {
         await addIncomeEntry(payload)
       }
@@ -397,12 +402,14 @@ export function IncomePage(): JSX.Element {
     setForm({
       amount: item.amount,
       date: item.date,
+      endDate: item.endDate,
       source: item.source,
       tags: item.tags,
       notes: item.notes,
       recurring: item.recurring,
       recurringIntervalDays: item.recurringIntervalDays,
     })
+    setEffectiveFromDate(todayString())
     setShiftForm(buildDefaultShiftForm(resolvedDefaultShiftJobId))
     setTagInput(item.tags.join(', '))
     setFormError('')
@@ -414,6 +421,7 @@ export function IncomePage(): JSX.Element {
     setEditId(null)
     setFormMode(nextMode)
     setForm(buildDefaultForm(t('Gehalt', 'Salary')))
+    setEffectiveFromDate(todayString())
     setShiftForm(buildDefaultShiftForm(resolvedDefaultShiftJobId))
     setTagInput('')
     setFormError('')
@@ -653,6 +661,12 @@ export function IncomePage(): JSX.Element {
                     <label>
                       {t('Alle X Tage', 'Every X days')}
                       <input type="number" min={1} value={form.recurringIntervalDays ?? 30} onChange={(event) => setForm((current) => ({ ...current, recurringIntervalDays: Number(event.target.value) }))} />
+                    </label>
+                  ) : null}
+                  {editId && form.recurring !== 'none' ? (
+                    <label>
+                      {t('Änderung wirksam ab', 'Change effective from')}
+                      <input type="date" value={effectiveFromDate} onChange={(event) => setEffectiveFromDate(event.target.value)} required />
                     </label>
                   ) : null}
                   <label>

@@ -121,12 +121,17 @@ export function materializeIncomeEntriesForRange(entries: IncomeEntry[], rangeSt
   const resolved: IncomeEntry[] = []
 
   for (const entry of entries) {
+    if (entry.endDate && compareDateStrings(entry.endDate, rangeStart) < 0) {
+      continue
+    }
     if (compareDateStrings(entry.date, rangeEnd) > 0) {
       continue
     }
 
     if (entry.recurring === 'none') {
-      if (compareDateStrings(entry.date, rangeStart) >= 0) {
+      const isWithinRange = compareDateStrings(entry.date, rangeStart) >= 0 && compareDateStrings(entry.date, rangeEnd) <= 0
+      const isBeforeEndDate = !entry.endDate || compareDateStrings(entry.date, entry.endDate) <= 0
+      if (isWithinRange && isBeforeEndDate) {
         resolved.push({ ...entry, id: `${entry.id}::${entry.date}` })
       }
       continue
@@ -135,6 +140,9 @@ export function materializeIncomeEntriesForRange(entries: IncomeEntry[], rangeSt
     let currentDate = fastForwardToRangeStart(entry.date, rangeStart, entry)
     let guard = 0
     while (compareDateStrings(currentDate, rangeEnd) <= 0 && guard < 2000) {
+      if (entry.endDate && compareDateStrings(currentDate, entry.endDate) > 0) {
+        break
+      }
       if (compareDateStrings(currentDate, rangeStart) >= 0) {
         resolved.push({ ...entry, id: `${entry.id}::${currentDate}`, date: currentDate })
       }

@@ -32,6 +32,7 @@ export interface IncomeEntry {
   id: string
   amount: number
   date: string
+  endDate?: string
   source: string
   tags: string[]
   notes: string
@@ -44,6 +45,72 @@ export interface IncomeEntry {
 export type Frequency = 'monthly' | 'yearly'
 export type EmploymentType = 'casual' | 'fixed'
 export type FixedPayInterval = 'monthly' | 'biweekly' | 'weekly'
+
+export type HouseholdType = 'house' | 'rental' | 'owned' | 'shared' | 'other'
+export type HouseholdCostFrequency = 'weekly' | 'biweekly' | 'monthly' | 'yearly' | 'one_time'
+export type HouseholdCostStatus = 'active' | 'paused' | 'ended'
+export type HouseholdSplitType = 'equal' | 'weighted' | 'fixed_amount' | 'custom'
+
+export interface Household {
+  id: string
+  name: string
+  type: HouseholdType
+  currency: 'EUR' | 'USD'
+  billingStart: string
+  isArchived: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface HouseholdMember {
+  id: string
+  householdId: string
+  name: string
+  role: string
+  activeFrom: string
+  activeTo: string | null
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface HouseholdPayer {
+  id: string
+  householdId: string
+  name: string
+  type: 'resident' | 'external'
+  linkedMemberId: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface HouseholdCost {
+  id: string
+  householdId: string
+  title: string
+  category: string
+  subcategory: string
+  amount: number
+  frequency: HouseholdCostFrequency
+  startDate: string
+  endDate: string | null
+  payerId: string | null
+  responsibleMemberId: string | null
+  isShared: boolean
+  splitType: HouseholdSplitType
+  notes: string
+  status: HouseholdCostStatus
+  createdAt: string
+  updatedAt: string
+}
+
+export interface HouseholdCostSplit {
+  id: string
+  costId: string
+  memberId: string
+  sharePercent: number | null
+  shareAmount: number | null
+}
 
 export interface ShiftJobConfig {
   id: string
@@ -148,6 +215,11 @@ export interface ProfileBackupPayload {
   subscriptions: Subscription[]
   incomeEntries: IncomeEntry[]
   interestScenarios: InterestScenario[]
+  households: Household[]
+  householdMembers: HouseholdMember[]
+  householdPayers: HouseholdPayer[]
+  householdCosts: HouseholdCost[]
+  householdCostSplits: HouseholdCostSplit[]
 }
 
 export interface AppBackup {
@@ -165,4 +237,9 @@ export interface AppBackup {
   subscriptions?: Subscription[]
   incomeEntries?: IncomeEntry[]
   interestScenarios?: InterestScenario[]
+  households?: Household[]
+  householdMembers?: HouseholdMember[]
+  householdPayers?: HouseholdPayer[]
+  householdCosts?: HouseholdCost[]
+  householdCostSplits?: HouseholdCostSplit[]
 }

@@ -3,6 +3,14 @@
 All notable changes for desktop releases are documented here.  
 Each release must have a matching section (`## vX.Y.Z`) so GitHub release notes and the in-app update dialog stay in sync.
 
+## v0.10.0
+- Added a new **Household** tab for managing shared living costs in one place.
+- Added household setup with residents and recurring household cost entries.
+- Added payer assignment per cost, including **external payers** (non-residents).
+- Added household monthly overview split into total costs, resident share, and externally paid amount.
+- Added household category/resident breakdown charts and 12-month trend view.
+- Improved household translation coverage, including subcategory labels.
+
 ## v0.9.62
 - Improved profile UX and reliability across login, onboarding, and settings.
 - Onboarding now lets users choose job type (casual vs fixed) and saves the selected job setup correctly.

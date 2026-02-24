@@ -1,5 +1,5 @@
-﻿import type { Subscription } from '../types/models'
-import { addDays, addMonths, compareDateStrings, subtractDays, todayString, withinDays } from './date'
+import type { Subscription } from '../types/models'
+import { addDays, addMonths, compareDateStrings, endOfMonth, startOfMonth, subtractDays, todayString, withinDays } from './date'
 
 export function monthlyEquivalent(subscription: Subscription): number {
   switch (subscription.interval) {
@@ -20,6 +20,21 @@ export function monthlyEquivalent(subscription: Subscription): number {
 
 export function yearlyEquivalent(subscription: Subscription): number {
   return monthlyEquivalent(subscription) * 12
+}
+
+function isSubscriptionVisibleInMonth(subscription: Subscription, monthStartDate: string): boolean {
+  if (subscription.status !== 'active' && subscription.status !== 'paused') {
+    return false
+  }
+  const rangeStart = startOfMonth(monthStartDate)
+  const rangeEnd = endOfMonth(monthStartDate)
+  if (compareDateStrings(subscription.startDate, rangeEnd) > 0) {
+    return false
+  }
+  if (subscription.endDate && compareDateStrings(subscription.endDate, rangeStart) < 0) {
+    return false
+  }
+  return true
 }
 
 function intervalDays(subscription: Subscription): number {
@@ -80,8 +95,9 @@ export function getCancelByDate(subscription: Subscription, today = todayString(
 }
 
 export function monthlyTotal(subscriptions: Subscription[]): number {
+  const currentMonthStart = startOfMonth(todayString())
   return subscriptions
-    .filter((item) => item.status === 'active' || item.status === 'paused')
+    .filter((item) => isSubscriptionVisibleInMonth(item, currentMonthStart))
     .reduce((sum, item) => sum + monthlyEquivalent(item), 0)
 }
 
@@ -92,7 +108,14 @@ export function yearlyTotal(subscriptions: Subscription[]): number {
 export function upcomingPayments(subscriptions: Subscription[], rangeDays = 30, today = todayString()): Subscription[] {
   return subscriptions
     .filter((item) => item.status === 'active')
-    .filter((item) => withinDays(getNextPaymentDate(item, today), rangeDays, today))
+    .filter((item) => isSubscriptionVisibleInMonth(item, startOfMonth(today)))
+    .filter((item) => {
+      const nextPaymentDate = getNextPaymentDate(item, today)
+      if (item.endDate && compareDateStrings(nextPaymentDate, item.endDate) > 0) {
+        return false
+      }
+      return withinDays(nextPaymentDate, rangeDays, today)
+    })
     .sort((a, b) => compareDateStrings(getNextPaymentDate(a, today), getNextPaymentDate(b, today)))
 }
 
@@ -103,26 +126,26 @@ export function monthlyTrend(subscriptions: Subscription[], monthsBack = 12, tod
   for (let i = monthsBack - 1; i >= 0; i -= 1) {
     const anchor = new Date(year, month - 1 - i, 1)
     const key = `${anchor.getFullYear()}-${`${anchor.getMonth() + 1}`.padStart(2, '0')}`
-    const value = subscriptions
-      .filter((item) => item.status === 'active' || item.status === 'paused')
-      .filter((item) => item.startDate.slice(0, 7) <= key)
-      .reduce((sum, item) => sum + monthlyEquivalent(item), 0)
+    const monthStartDate = `${key}-01`
+    const value = subscriptions.filter((item) => isSubscriptionVisibleInMonth(item, monthStartDate)).reduce((sum, item) => sum + monthlyEquivalent(item), 0)
     output.push({ month: key, value })
   }
   return output
 }
 
 export function topSubscriptions(subscriptions: Subscription[], limit = 5): Subscription[] {
+  const currentMonthStart = startOfMonth(todayString())
   return [...subscriptions]
-    .filter((item) => item.status === 'active' || item.status === 'paused')
+    .filter((item) => isSubscriptionVisibleInMonth(item, currentMonthStart))
     .sort((a, b) => monthlyEquivalent(b) - monthlyEquivalent(a))
     .slice(0, limit)
 }
 
 export function categoryBreakdown(subscriptions: Subscription[]): Array<{ label: string; value: number }> {
+  const currentMonthStart = startOfMonth(todayString())
   const map = new Map<string, number>()
   for (const item of subscriptions) {
-    if (item.status !== 'active' && item.status !== 'paused') {
+    if (!isSubscriptionVisibleInMonth(item, currentMonthStart)) {
       continue
     }
     map.set(item.category, (map.get(item.category) ?? 0) + monthlyEquivalent(item))
@@ -131,4 +154,3 @@ export function categoryBreakdown(subscriptions: Subscription[]): Array<{ label:
     .map(([label, value]) => ({ label, value }))
     .sort((a, b) => b.value - a.value)
 }
-

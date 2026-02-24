@@ -11,6 +11,7 @@ import { useDocumentAppearance } from './hooks/useDocumentAppearance'
 import { useGuardedBackdropClose } from './hooks/useGuardedBackdropClose'
 import { useLockScreenVisuals } from './hooks/useLockScreenVisuals'
 import { DashboardPage } from './pages/DashboardPage'
+import { HouseholdsPage } from './pages/HouseholdsPage'
 import { IncomePage } from './pages/IncomePage'
 import { SettingsPage } from './pages/SettingsPage'
 import { StatsPage } from './pages/StatsPage'
@@ -56,7 +57,7 @@ export default function App(): JSX.Element {
   } = useAppContext()
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [showDesktopDownloadHint, setShowDesktopDownloadHint] = useState(() => isGitHubPagesRuntime())
-  const [isSessionLoggedOut, setIsSessionLoggedOut] = useState(false)
+  const [isSessionLoggedOut, setIsSessionLoggedOut] = useState(true)
   const [unlockSecret, setUnlockSecret] = useState('')
   const [unlockError, setUnlockError] = useState('')
   const [unlocking, setUnlocking] = useState(false)
@@ -122,6 +123,7 @@ export default function App(): JSX.Element {
     { to: '/dashboard', label: t('\u00dcbersicht', 'Overview'), icon: '\u2302' },
     { to: '/income', label: t('Einkommen', 'Income'), icon: '\u20ac' },
     { to: '/subscriptions', label: t('Abo-Tracker', 'Subscription Tracker'), icon: '\u21bb' },
+    { to: '/households', label: t('Haushaltskosten', 'Household costs'), icon: '🏠' },
     { to: '/stats', label: t('Statistiken', 'Statistics'), icon: '\u2197' },
     { to: '/settings', label: t('Einstellungen', 'Settings'), icon: '\u2699', isSettings: true },
   ]
@@ -180,6 +182,7 @@ export default function App(): JSX.Element {
     },
     { id: 'go-dashboard', label: t('Übersicht öffnen', 'Open overview'), description: t('Zur Gesamtübersicht springen', 'Jump to overall overview'), run: () => navigate('/dashboard') },
     { id: 'go-subs', label: t('Abo-Tracker öffnen', 'Open subscription tracker'), description: t('Wiederkehrende Kosten verwalten', 'Manage recurring costs'), run: () => navigate('/subscriptions') },
+    { id: 'go-households', label: t('Haushaltskosten öffnen', 'Open household costs'), description: t('Haushalt, Bewohner und Fixkosten verwalten', 'Manage households, residents, and fixed costs'), run: () => navigate('/households') },
     { id: 'go-income', label: t('Einkommen öffnen', 'Open income'), description: t('Einkommenseinträge verwalten', 'Manage income entries'), run: () => navigate('/income') },
     { id: 'go-stats', label: t('Statistiken öffnen', 'Open statistics'), description: t('Trends und Cashflow prüfen', 'Review trends and cashflow'), run: () => navigate('/stats') },
     { id: 'go-settings', label: t('Einstellungen öffnen', 'Open settings'), description: t('Präferenzen anpassen', 'Adjust preferences'), run: () => navigate('/settings') },
@@ -348,7 +351,7 @@ export default function App(): JSX.Element {
             <input
               value={uiState.globalSearch}
               onChange={(event) => setUiState({ globalSearch: event.target.value })}
-              placeholder={t('Globale Suche (Abos und Einkommen)', 'Global search (subscriptions and income)')}
+              placeholder={t('Globale Suche (Abos, Einkommen und Haushaltskosten)', 'Global search (subscriptions, income, and household costs)')}
               aria-label={t('Globale Suche', 'Global search')}
             />
             <div className="topbar-actions">
@@ -375,6 +378,7 @@ export default function App(): JSX.Element {
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/subscriptions" element={<SubscriptionsPage />} />
+              <Route path="/households" element={<HouseholdsPage />} />
               <Route path="/income" element={<IncomePage />} />
               <Route path="/stats" element={<StatsPage />} />
               <Route path="/settings" element={<SettingsPage />} />

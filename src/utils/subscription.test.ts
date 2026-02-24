@@ -1,6 +1,6 @@
-﻿import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import type { Subscription } from '../types/models'
-import { getCancelByDate, getNextPaymentDate, monthlyEquivalent } from './subscription'
+import { getCancelByDate, getNextPaymentDate, monthlyEquivalent, monthlyTrend } from './subscription'
 
 const base: Subscription = {
   id: '1',
@@ -33,5 +33,27 @@ describe('subscription helpers', () => {
     const cancelBy = getCancelByDate(base, '2025-03-10')
     expect(cancelBy).toBe('2025-03-18')
   })
-})
 
+  it('keeps historical trend segments when amount changes mid-year', () => {
+    const oldSegment: Subscription = {
+      ...base,
+      id: 'old',
+      amount: 10,
+      startDate: '2025-01-01',
+      endDate: '2025-06-30',
+    }
+    const newSegment: Subscription = {
+      ...base,
+      id: 'new',
+      amount: 20,
+      startDate: '2025-07-01',
+    }
+    const trend = monthlyTrend([oldSegment, newSegment], 4, '2025-08-15')
+    expect(trend).toEqual([
+      { month: '2025-05', value: 10 },
+      { month: '2025-06', value: 10 },
+      { month: '2025-07', value: 20 },
+      { month: '2025-08', value: 20 },
+    ])
+  })
+})
