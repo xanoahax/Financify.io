@@ -3,6 +3,10 @@
 All notable changes for desktop releases are documented here.  
 Each release must have a matching section (`## vX.Y.Z`) so GitHub release notes and the in-app update dialog stay in sync.
 
+## v0.9.61
+- Fixed desktop auto-update checks for older app versions by restoring a valid updater manifest (`latest.json`) on the newest release.
+- No feature changes in this patch; release exists to recover updater compatibility.
+
 ## v0.9.54
 - Fixed broken sidebar icons caused by invalid symbol characters.
 - Replaced sidebar symbols with stable Unicode icons for all navigation items.
