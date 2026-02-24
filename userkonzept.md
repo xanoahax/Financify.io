@@ -65,7 +65,7 @@ Warum separate DB pro Profil:
 - Profil umbenennen
 - Profil wechseln
 - Profil loeschen (mit harter Bestaetigung)
-- Optional spaeter: Profil-PIN (pro Profil)
+- Optionales Profil-Passwort (pro Profil)
 
 ## 4. Settings und First-Run Integration
 

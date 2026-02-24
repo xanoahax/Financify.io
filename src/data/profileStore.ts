@@ -43,6 +43,7 @@ function sanitizeProfiles(rows: unknown): UserProfile[] {
       return {
         id,
         name,
+        avatarDataUrl: typeof source.avatarDataUrl === 'string' && source.avatarDataUrl.startsWith('data:image/') ? source.avatarDataUrl : null,
         createdAt: typeof source.createdAt === 'string' && source.createdAt ? source.createdAt : timestamp,
         updatedAt: typeof source.updatedAt === 'string' && source.updatedAt ? source.updatedAt : timestamp,
         lastOpenedAt: typeof source.lastOpenedAt === 'string' && source.lastOpenedAt ? source.lastOpenedAt : timestamp,
@@ -60,6 +61,7 @@ export function makeProfile(name: string, options?: { id?: string; onboardingCom
   return {
     id: options?.id?.trim() || `profile-${crypto.randomUUID()}`,
     name: trimmedName || 'User',
+    avatarDataUrl: null,
     createdAt: timestamp,
     updatedAt: timestamp,
     lastOpenedAt: timestamp,

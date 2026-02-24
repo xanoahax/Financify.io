@@ -1,12 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
+import { BackgroundLayers } from './components/BackgroundLayers'
 import { CommandPalette, type PaletteAction } from './components/CommandPalette'
+import { LoginScreen } from './components/LoginScreen'
+import { OnboardingCard } from './components/OnboardingCard'
+import { ProfileSwitcher } from './components/ProfileSwitcher'
 import { QuickAddFab } from './components/QuickAddFab'
 import { ToastHost } from './components/ToastHost'
+import { useDocumentAppearance } from './hooks/useDocumentAppearance'
 import { useGuardedBackdropClose } from './hooks/useGuardedBackdropClose'
+import { useLockScreenVisuals } from './hooks/useLockScreenVisuals'
 import { DashboardPage } from './pages/DashboardPage'
 import { IncomePage } from './pages/IncomePage'
-import { InterestPage } from './pages/InterestPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { StatsPage } from './pages/StatsPage'
 import { SubscriptionsPage } from './pages/SubscriptionsPage'
@@ -14,171 +19,10 @@ import { useAppContext } from './state/useAppContext'
 import type { OnboardingSetupInput } from './state/AppContext'
 import { tx } from './utils/i18n'
 import { isGitHubPagesRuntime } from './utils/runtime'
+import { resolveTheme } from './utils/theme'
 
 let startupUpdateCheckTriggered = false
 const DESKTOP_RELEASES_URL = 'https://github.com/xanoahax/Financify.io/releases'
-
-function resolveTheme(theme: 'light' | 'dark' | 'glass' | 'system'): 'light' | 'dark' | 'glass' {
-  if (theme !== 'system') {
-    return theme
-  }
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-}
-
-function OnboardingCard(props: {
-  profileName: string
-  defaults: Pick<OnboardingSetupInput, 'language' | 'theme' | 'currency' | 'dateFormat'>
-  onFinish: (payload: OnboardingSetupInput) => Promise<void>
-  canExit: boolean
-  onExit: () => void
-  onThemePreviewChange: (theme: OnboardingSetupInput['theme']) => void
-}): JSX.Element {
-  const { profileName: initialProfileName, defaults, onFinish, canExit, onExit, onThemePreviewChange } = props
-  const [profileName, setProfileName] = useState(initialProfileName)
-  const [language, setLanguage] = useState(defaults.language)
-  const [theme, setTheme] = useState(defaults.theme)
-  const [currency, setCurrency] = useState(defaults.currency)
-  const [dateFormat, setDateFormat] = useState(defaults.dateFormat)
-  const [authMode, setAuthMode] = useState<OnboardingSetupInput['authMode']>('none')
-  const [authSecret, setAuthSecret] = useState('')
-  const [authSecretConfirm, setAuthSecretConfirm] = useState('')
-  const [jobName, setJobName] = useState('')
-  const [jobRate, setJobRate] = useState('18')
-  const [error, setError] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-
-  useEffect(() => {
-    onThemePreviewChange(theme)
-  }, [onThemePreviewChange, theme])
-
-  async function submit(): Promise<void> {
-    if (authMode !== 'none' && authSecret !== authSecretConfirm) {
-      setError(tx(language, 'PIN/Passwort stimmt nicht überein.', 'PIN/password does not match.'))
-      return
-    }
-    setError('')
-    setSubmitting(true)
-    try {
-      await onFinish({
-        profileName,
-        language,
-        theme,
-        currency,
-        dateFormat,
-        authMode,
-        authSecret: authMode === 'none' ? undefined : authSecret,
-        jobName,
-        jobHourlyRate: Number(jobRate),
-      })
-    } catch (err) {
-      setError(err instanceof Error ? err.message : tx(language, 'Einrichtung fehlgeschlagen.', 'Setup failed.'))
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  return (
-    <article className="card onboarding-card">
-      <header className="section-header">
-        <h1>{tx(language, 'Einrichtung', 'Setup')}</h1>
-        <p className="muted">{tx(language, `Profil: ${profileName || initialProfileName}`, `Profile: ${profileName || initialProfileName}`)}</p>
-      </header>
-      <div className="setting-list">
-        <label>
-          {tx(language, 'Profilname', 'Profile name')}
-          <input value={profileName} onChange={(event) => setProfileName(event.target.value)} placeholder={tx(language, 'z. B. Noah', 'e.g. Noah')} />
-        </label>
-        <label>
-          {tx(language, 'Sprache', 'Language')}
-          <select value={language} onChange={(event) => setLanguage(event.target.value as typeof language)}>
-            <option value="de">Deutsch</option>
-            <option value="en">English</option>
-          </select>
-        </label>
-        <label>
-          {tx(language, 'Thema', 'Theme')}
-          <select value={theme} onChange={(event) => setTheme(event.target.value as typeof theme)}>
-            <option value="light">{tx(language, 'Hell', 'Light')}</option>
-            <option value="dark">{tx(language, 'Dunkel', 'Dark')}</option>
-            <option value="glass">{tx(language, 'Glas', 'Glass')}</option>
-            <option value="system">{tx(language, 'System', 'System')}</option>
-          </select>
-        </label>
-        <label>
-          {tx(language, 'Währung', 'Currency')}
-          <select value={currency} onChange={(event) => setCurrency(event.target.value as typeof currency)}>
-            <option value="EUR">EUR (€)</option>
-            <option value="USD">USD ($)</option>
-          </select>
-        </label>
-        <label>
-          {tx(language, 'Datumsformat', 'Date format')}
-          <select value={dateFormat} onChange={(event) => setDateFormat(event.target.value as typeof dateFormat)}>
-            <option value="DD.MM.YYYY">DD.MM.YYYY</option>
-            <option value="MM/DD/YYYY">MM/DD/YYYY</option>
-            <option value="YYYY-MM-DD">YYYY-MM-DD</option>
-          </select>
-        </label>
-        <label>
-          {tx(language, 'Profilschutz', 'Profile protection')}
-          <select value={authMode} onChange={(event) => setAuthMode(event.target.value as OnboardingSetupInput['authMode'])}>
-            <option value="none">{tx(language, 'Kein Schutz', 'No protection')}</option>
-            <option value="pin">{tx(language, 'PIN', 'PIN')}</option>
-            <option value="password">{tx(language, 'Passwort', 'Password')}</option>
-          </select>
-        </label>
-        {authMode !== 'none' ? (
-          <>
-            <label>
-              {authMode === 'pin' ? tx(language, 'PIN', 'PIN') : tx(language, 'Passwort', 'Password')}
-              <input
-                type={authMode === 'pin' ? 'password' : 'password'}
-                inputMode={authMode === 'pin' ? 'numeric' : 'text'}
-                value={authSecret}
-                onChange={(event) => setAuthSecret(event.target.value)}
-                placeholder={authMode === 'pin' ? tx(language, '4-8 Ziffern', '4-8 digits') : tx(language, 'mind. 6 Zeichen', 'min. 6 characters')}
-              />
-            </label>
-            <label>
-              {tx(language, 'Bestätigen', 'Confirm')}
-              <input
-                type="password"
-                inputMode={authMode === 'pin' ? 'numeric' : 'text'}
-                value={authSecretConfirm}
-                onChange={(event) => setAuthSecretConfirm(event.target.value)}
-                placeholder={tx(language, 'Erneut eingeben', 'Enter again')}
-              />
-            </label>
-          </>
-        ) : null}
-        <label>
-          {tx(language, 'Job (optional)', 'Job (optional)')}
-          <input value={jobName} onChange={(event) => setJobName(event.target.value)} placeholder={tx(language, 'z. B. FoodAffairs', 'e.g. FoodAffairs')} />
-        </label>
-        <label>
-          {tx(language, 'Stundensatz (optional)', 'Hourly rate (optional)')}
-          <input type="number" min={0.01} step="0.01" value={jobRate} onChange={(event) => setJobRate(event.target.value)} />
-        </label>
-      </div>
-      {error ? <p className="error-text">{error}</p> : null}
-      <div className="form-actions">
-        {canExit ? (
-          <button type="button" className="button button-secondary" onClick={onExit} disabled={submitting}>
-            {tx(language, 'Einrichtung verlassen', 'Leave setup')}
-          </button>
-        ) : null}
-        <button
-          type="button"
-          className="button button-primary"
-          onClick={() => void submit()}
-          disabled={submitting}
-        >
-          {submitting ? tx(language, 'Speichert...', 'Saving...') : tx(language, 'Einrichtung abschließen', 'Finish setup')}
-        </button>
-      </div>
-    </article>
-  )
-}
 
 export default function App(): JSX.Element {
   const {
@@ -190,11 +34,13 @@ export default function App(): JSX.Element {
     profiles,
     activeProfileId,
     activeProfile,
+    isProfileLocked,
     switchProfile,
     needsOnboarding,
     canExitOnboarding,
     completeOnboarding,
     exitOnboarding,
+    unlockActiveProfile,
     toasts,
     dismissToast,
     updatesSupported,
@@ -208,8 +54,16 @@ export default function App(): JSX.Element {
   } = useAppContext()
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [showDesktopDownloadHint, setShowDesktopDownloadHint] = useState(() => isGitHubPagesRuntime())
+  const [unlockSecret, setUnlockSecret] = useState('')
+  const [unlockError, setUnlockError] = useState('')
+  const [unlocking, setUnlocking] = useState(false)
   const navigate = useNavigate()
-  const language = settings.language
+  const { effectiveSettings, effectiveBackgroundImageDataUrl, captureCurrentVisualSnapshot } = useLockScreenVisuals({
+    settings,
+    backgroundImageDataUrl,
+    isProfileLocked,
+  })
+  const language = effectiveSettings.language
   const t = (de: string, en: string) => tx(language, de, en)
   const applyThemePreview = useCallback((theme: OnboardingSetupInput['theme']) => {
     document.documentElement.dataset.theme = resolveTheme(theme)
@@ -217,37 +71,62 @@ export default function App(): JSX.Element {
   const closeDesktopDownloadHint = useCallback(() => setShowDesktopDownloadHint(false), [])
   const desktopDownloadHintBackdropCloseGuard = useGuardedBackdropClose(closeDesktopDownloadHint)
   const updatePromptBackdropCloseGuard = useGuardedBackdropClose(dismissUpdatePrompt)
+  const resetUnlockState = useCallback(() => {
+    setUnlockSecret('')
+    setUnlockError('')
+  }, [])
+  const handleProfileSwitch = useCallback(
+    (profileId: string) => {
+      // Keep login visuals on the profile we switch away from.
+      captureCurrentVisualSnapshot()
+      resetUnlockState()
+      switchProfile(profileId)
+    },
+    [captureCurrentVisualSnapshot, resetUnlockState, switchProfile],
+  )
+  const handleLockedProfileSelect = useCallback(
+    (profileId: string) => {
+      // While locked, keep the existing login visual snapshot untouched.
+      resetUnlockState()
+      switchProfile(profileId)
+    },
+    [resetUnlockState, switchProfile],
+  )
+
+  useEffect(() => {
+    resetUnlockState()
+    setUnlocking(false)
+  }, [activeProfileId, isProfileLocked, resetUnlockState])
+
+  useDocumentAppearance({
+    settings: effectiveSettings,
+    language,
+  })
 
   const navItems = [
     { to: '/dashboard', label: t('\u00dcbersicht', 'Overview'), icon: '\u2302' },
     { to: '/income', label: t('Einkommen', 'Income'), icon: '\u20ac' },
     { to: '/subscriptions', label: t('Abo-Tracker', 'Subscription Tracker'), icon: '\u21bb' },
-    { to: '/interest', label: t('Zinsrechner', 'Interest Calculator'), icon: '\u2211' },
     { to: '/stats', label: t('Statistiken', 'Statistics'), icon: '\u2197' },
-    { to: '/settings', label: t('Einstellungen', 'Settings'), icon: '\u2699' },
+    { to: '/settings', label: t('Einstellungen', 'Settings'), icon: '\u2699', isSettings: true },
   ]
-
-  useEffect(() => {
-    const effectiveTheme = resolveTheme(settings.theme)
-    document.documentElement.dataset.theme = effectiveTheme
-    document.documentElement.lang = language
-    document.documentElement.dataset.gradientOverlay = settings.gradientOverlayEnabled ? 'on' : 'off'
-    document.documentElement.dataset.motion = settings.reducedMotion ? 'reduced' : 'full'
-    document.documentElement.style.setProperty('--accent', settings.accentColor)
-    document.documentElement.style.setProperty('--gradient-a', settings.gradientColorA)
-    document.documentElement.style.setProperty('--gradient-b', settings.gradientColorB)
-  }, [
-    settings.accentColor,
-    settings.gradientColorA,
-    settings.gradientColorB,
-    settings.gradientOverlayEnabled,
-    language,
-    settings.reducedMotion,
-    settings.theme,
-  ])
-
+  const selectableProfiles = useMemo(() => {
+    const completed = profiles.filter((profile) => profile.onboardingCompleted)
+    const pending = profiles.filter((profile) => !profile.onboardingCompleted)
+    const base = pending.length > 0 ? [...completed, pending[pending.length - 1]] : completed
+    if (activeProfileId && !base.some((profile) => profile.id === activeProfileId)) {
+      const active = profiles.find((profile) => profile.id === activeProfileId)
+      if (active) {
+        return [...base, active]
+      }
+    }
+    return base
+  }, [activeProfileId, profiles])
   useEffect(() => {
     function onShortcut(event: KeyboardEvent): void {
+      if (isProfileLocked) {
+        return
+      }
       const isPaletteShortcut = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k'
       if (isPaletteShortcut) {
         event.preventDefault()
@@ -256,7 +135,13 @@ export default function App(): JSX.Element {
     }
     window.addEventListener('keydown', onShortcut)
     return () => window.removeEventListener('keydown', onShortcut)
-  }, [])
+  }, [isProfileLocked])
+
+  useEffect(() => {
+    if (isProfileLocked) {
+      setPaletteOpen(false)
+    }
+  }, [isProfileLocked])
 
   useEffect(() => {
     if (!updatesSupported || loading || startupUpdateCheckTriggered) {
@@ -282,38 +167,43 @@ export default function App(): JSX.Element {
     { id: 'go-dashboard', label: t('Übersicht öffnen', 'Open overview'), description: t('Zur Gesamtübersicht springen', 'Jump to overall overview'), run: () => navigate('/dashboard') },
     { id: 'go-subs', label: t('Abo-Tracker öffnen', 'Open subscription tracker'), description: t('Wiederkehrende Kosten verwalten', 'Manage recurring costs'), run: () => navigate('/subscriptions') },
     { id: 'go-income', label: t('Einkommen öffnen', 'Open income'), description: t('Einkommenseinträge verwalten', 'Manage income entries'), run: () => navigate('/income') },
-    { id: 'go-interest', label: t('Zinsrechner öffnen', 'Open interest calculator'), description: t('Szenarien mit Zinseszins berechnen', 'Calculate compound interest scenarios'), run: () => navigate('/interest') },
     { id: 'go-stats', label: t('Statistiken öffnen', 'Open statistics'), description: t('Trends und Cashflow prüfen', 'Review trends and cashflow'), run: () => navigate('/stats') },
     { id: 'go-settings', label: t('Einstellungen öffnen', 'Open settings'), description: t('Präferenzen anpassen', 'Adjust preferences'), run: () => navigate('/settings') },
     { id: 'toggle-privacy', label: t('Beträge ausblenden', 'Hide amounts'), description: t('Privatsphäre-Modus in Einstellungen umschalten', 'Toggle privacy mode in settings'), run: () => navigate('/settings') },
   ]
 
   const backgroundStyle = useMemo(() => {
-    if (!backgroundImageDataUrl) {
+    if (!effectiveBackgroundImageDataUrl) {
       return undefined
     }
     return {
-      backgroundImage: `url(${backgroundImageDataUrl})`,
-      filter: settings.backgroundImageBlurEnabled ? `blur(${settings.backgroundImageBlurAmount}px)` : 'none',
+      backgroundImage: `url(${effectiveBackgroundImageDataUrl})`,
+      filter: effectiveSettings.backgroundImageBlurEnabled ? `blur(${effectiveSettings.backgroundImageBlurAmount}px)` : 'none',
     }
-  }, [backgroundImageDataUrl, settings.backgroundImageBlurAmount, settings.backgroundImageBlurEnabled])
+  }, [
+    effectiveBackgroundImageDataUrl,
+    effectiveSettings.backgroundImageBlurAmount,
+    effectiveSettings.backgroundImageBlurEnabled,
+  ])
 
-  if (loading) {
-    return (
-      <main className="loading-shell">
-        <article className="card loading-card">
-          <h1>financify</h1>
-          <p className="muted">{t('Lokale Daten werden geladen...', 'Loading local data...')}</p>
-        </article>
-      </main>
-    )
+  async function onUnlockSubmit(event: React.FormEvent): Promise<void> {
+    event.preventDefault()
+    try {
+      setUnlocking(true)
+      setUnlockError('')
+      await unlockActiveProfile(unlockSecret)
+      setUnlockSecret('')
+    } catch (error) {
+      setUnlockError(error instanceof Error ? error.message : t('Entsperren fehlgeschlagen.', 'Unlock failed.'))
+    } finally {
+      setUnlocking(false)
+    }
   }
 
   if (needsOnboarding) {
     return (
       <>
-        <div className="background-gradient-layer" aria-hidden="true" />
-        {backgroundImageDataUrl ? <div className="background-image-layer" style={backgroundStyle} aria-hidden="true" /> : null}
+        <BackgroundLayers imageStyle={backgroundStyle} />
         <main className="loading-shell">
           <OnboardingCard
             key={activeProfileId}
@@ -335,10 +225,41 @@ export default function App(): JSX.Element {
     )
   }
 
+  if (isProfileLocked) {
+    return (
+      <>
+        <BackgroundLayers imageStyle={backgroundStyle} />
+        <LoginScreen
+          profiles={profiles}
+          activeProfileId={activeProfileId}
+          activeProfile={activeProfile}
+          language={language}
+          unlockSecret={unlockSecret}
+          unlockError={unlockError}
+          unlocking={unlocking}
+          onSelectProfile={handleLockedProfileSelect}
+          onUnlockSecretChange={setUnlockSecret}
+          onUnlockSubmit={onUnlockSubmit}
+        />
+        <ToastHost toasts={toasts} onDismiss={dismissToast} language={language} />
+      </>
+    )
+  }
+
+  if (loading) {
+    return (
+      <main className="loading-shell">
+        <article className="card loading-card">
+          <h1>financify</h1>
+          <p className="muted">{t('Lokale Daten werden geladen...', 'Loading local data...')}</p>
+        </article>
+      </main>
+    )
+  }
+
   return (
     <>
-      <div className="background-gradient-layer" aria-hidden="true" />
-      {backgroundImageDataUrl ? <div className="background-image-layer" style={backgroundStyle} aria-hidden="true" /> : null}
+      <BackgroundLayers imageStyle={backgroundStyle} />
 
       <div className={`app-shell ${uiState.sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
         <aside className="sidebar">
@@ -360,7 +281,16 @@ export default function App(): JSX.Element {
                 to={item.to}
                 title={item.label}
                 aria-label={item.label}
-                className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}
+                className={({ isActive }) => {
+                  const classes = ['nav-link']
+                  if (isActive) {
+                    classes.push('active')
+                  }
+                  if (item.isSettings) {
+                    classes.push('settings-nav-link')
+                  }
+                  return classes.join(' ')
+                }}
               >
                 <span className="nav-icon" aria-hidden="true">
                   {item.icon}
@@ -369,6 +299,28 @@ export default function App(): JSX.Element {
               </NavLink>
             ))}
           </nav>
+          <div className="sidebar-footer">
+            <ProfileSwitcher
+              profiles={selectableProfiles}
+              activeProfileId={activeProfileId}
+              activeProfile={activeProfile}
+              language={language}
+              onSwitchProfile={handleProfileSwitch}
+              className="sidebar-profile-switcher"
+              autoWidth={false}
+            />
+            <NavLink
+              to="/settings"
+              title={t('Einstellungen', 'Settings')}
+              aria-label={t('Einstellungen', 'Settings')}
+              className={({ isActive }) => (isActive ? 'nav-link sidebar-settings-link active' : 'nav-link sidebar-settings-link')}
+            >
+              <span className="nav-icon" aria-hidden="true">
+                ⚙
+              </span>
+              <span className="nav-label">{t('Einstellungen', 'Settings')}</span>
+            </NavLink>
+          </div>
         </aside>
 
         <div className="content-shell">
@@ -380,17 +332,15 @@ export default function App(): JSX.Element {
               aria-label={t('Globale Suche', 'Global search')}
             />
             <div className="topbar-actions">
-              <select
-                value={activeProfileId}
-                onChange={(event) => switchProfile(event.target.value)}
-                aria-label={t('Profil wechseln', 'Switch profile')}
-              >
-                {profiles.map((profile) => (
-                  <option key={profile.id} value={profile.id}>
-                    {profile.name}
-                  </option>
-                ))}
-              </select>
+              <ProfileSwitcher
+                profiles={selectableProfiles}
+                activeProfileId={activeProfileId}
+                activeProfile={activeProfile}
+                language={language}
+                onSwitchProfile={handleProfileSwitch}
+                className="topbar-profile-switcher"
+                autoWidth
+              />
               <button type="button" className="button button-secondary palette-launcher" onClick={() => setPaletteOpen(true)}>
                 {t('Cmd/Ctrl + K', 'Cmd/Ctrl + K')}
               </button>
@@ -402,7 +352,6 @@ export default function App(): JSX.Element {
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/subscriptions" element={<SubscriptionsPage />} />
-              <Route path="/interest" element={<InterestPage />} />
               <Route path="/income" element={<IncomePage />} />
               <Route path="/stats" element={<StatsPage />} />
               <Route path="/settings" element={<SettingsPage />} />
@@ -508,5 +457,7 @@ export default function App(): JSX.Element {
     </>
   )
 }
+
+
 
 

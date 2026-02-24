@@ -202,6 +202,16 @@ export function IncomePage(): JSX.Element {
     [periodRange.end, periodRange.start, sourceAndQueryFiltered],
   )
 
+  const yearToDateEntries = useMemo(
+    () => materializeIncomeEntriesForRange(sourceAndQueryFiltered, startOfYear(today), today),
+    [sourceAndQueryFiltered, today],
+  )
+
+  const yearForecastEntries = useMemo(
+    () => materializeIncomeEntriesForRange(sourceAndQueryFiltered, startOfYear(today), endOfYear(today)),
+    [sourceAndQueryFiltered, today],
+  )
+
   const rollingYearEntries = useMemo(
     () => materializeIncomeEntriesForRange(sourceAndQueryFiltered, addDays(today, -365), today),
     [sourceAndQueryFiltered, today],
@@ -209,14 +219,16 @@ export function IncomePage(): JSX.Element {
 
   const stats = useMemo(() => {
     const monthly = incomeByMonth(rollingYearEntries)
+    const totalEntries = viewMode === 'year' ? yearToDateEntries : resolvedPeriodEntries
     return {
-      total: sumIncome(resolvedPeriodEntries),
+      total: sumIncome(totalEntries),
+      yearForecastTotal: sumIncome(yearForecastEntries),
       monthSeries: monthly.map((item) => ({ label: monthLabel(item.month, monthLocale), value: item.value })).slice(-12),
-      sourceSeries: sourceBreakdown(resolvedPeriodEntries, (entry) => incomeSourceLabel(entry, settings.language)),
+      sourceSeries: sourceBreakdown(totalEntries, (entry) => incomeSourceLabel(entry, settings.language)),
       aggregates: monthStats(rollingYearEntries),
       mom: monthOverMonthChange(rollingYearEntries),
     }
-  }, [monthLocale, resolvedPeriodEntries, rollingYearEntries, settings.language])
+  }, [monthLocale, resolvedPeriodEntries, rollingYearEntries, settings.language, viewMode, yearForecastEntries, yearToDateEntries])
 
   const shiftHourlyRate = useMemo(() => {
     const rate = Number(selectedShiftJob?.hourlyRate)
@@ -379,9 +391,16 @@ export function IncomePage(): JSX.Element {
 
       <div className="stats-grid">
         <article className="card stat-card">
-          <p className="muted">{t('Einkommen gesamt', 'Total income')} ({viewMode === 'month' ? t('Monat', 'month') : t('Jahr', 'year')})</p>
+          <p className="muted">{t('Einkommen gesamt', 'Total income')} ({viewMode === 'month' ? t('Monat', 'month') : t('Jahr bis heute', 'Year to date')})</p>
           <p className="stat-value">{formatMoney(stats.total, settings.currency, settings.privacyHideAmounts)}</p>
-          <p className="hint">{t('Enthält wiederkehrende Einträge im gewählten Zeitraum.', 'Includes recurring entries in the selected period.')}</p>
+          {viewMode === 'year' ? (
+            <p className="hint">
+              {t('Bis heute inkl. wiederkehrender Einträge. Forecast (Jahr):', 'Up to today incl. recurring entries. Forecast (year):')}{' '}
+              {formatMoney(stats.yearForecastTotal, settings.currency, settings.privacyHideAmounts)}
+            </p>
+          ) : (
+            <p className="hint">{t('Enthält wiederkehrende Einträge im gewählten Zeitraum.', 'Includes recurring entries in the selected period.')}</p>
+          )}
         </article>
         <article className="card stat-card">
           <p className="muted">{t('Monatlicher Durchschnitt', 'Monthly average')}</p>

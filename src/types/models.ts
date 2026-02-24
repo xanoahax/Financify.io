@@ -91,6 +91,7 @@ export interface Settings {
 export interface UserProfile {
   id: string
   name: string
+  avatarDataUrl: string | null
   createdAt: string
   updatedAt: string
   lastOpenedAt: string
@@ -132,7 +133,7 @@ export interface UpdatePrompt {
 }
 
 export interface ProfileBackupPayload {
-  meta: Pick<UserProfile, 'id' | 'name' | 'createdAt' | 'updatedAt' | 'lastOpenedAt' | 'onboardingCompleted' | 'authMode' | 'authSecretHash'>
+  meta: Pick<UserProfile, 'id' | 'name' | 'avatarDataUrl' | 'createdAt' | 'updatedAt' | 'lastOpenedAt' | 'onboardingCompleted' | 'authMode' | 'authSecretHash'>
   settings: Settings
   uiState: UiState
   backgroundImageDataUrl: string | null

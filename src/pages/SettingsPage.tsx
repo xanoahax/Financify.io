@@ -13,6 +13,63 @@ function makeJobId(): string {
   return `job-${crypto.randomUUID()}`
 }
 
+function profileInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) {
+    return 'U'
+  }
+  const first = parts[0]?.[0] ?? ''
+  const second = parts.length > 1 ? parts[1]?.[0] ?? '' : ''
+  return `${first}${second}`.toUpperCase()
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('read-failed'))
+    reader.onload = () => {
+      if (typeof reader.result !== 'string') {
+        reject(new Error('invalid-result'))
+        return
+      }
+      resolve(reader.result)
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
+function loadImageFromDataUrl(dataUrl: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error('image-load-failed'))
+    image.src = dataUrl
+  })
+}
+
+async function buildCroppedAvatarDataUrl(dataUrl: string, zoom: number, offsetX: number, offsetY: number): Promise<string> {
+  const image = await loadImageFromDataUrl(dataUrl)
+  const size = 320
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+  if (!ctx) {
+    throw new Error('canvas-not-supported')
+  }
+
+  const baseScale = Math.max(size / image.width, size / image.height)
+  const appliedScale = baseScale * zoom
+  const drawWidth = image.width * appliedScale
+  const drawHeight = image.height * appliedScale
+  const dx = (size - drawWidth) / 2 + offsetX
+  const dy = (size - drawHeight) / 2 + offsetY
+
+  ctx.clearRect(0, 0, size, size)
+  ctx.drawImage(image, dx, dy, drawWidth, drawHeight)
+  return canvas.toDataURL('image/png')
+}
+
 export function SettingsPage(): JSX.Element {
   const {
     settings,
@@ -30,11 +87,9 @@ export function SettingsPage(): JSX.Element {
     skippedUpdateVersion,
     updateCheckError,
     profiles,
-    activeProfileId,
     activeProfile,
-    createProfile,
-    switchProfile,
     renameProfile,
+    updateProfileAvatar,
     deleteProfile,
     updateProfileProtection,
   } = useAppContext()
@@ -44,7 +99,6 @@ export function SettingsPage(): JSX.Element {
   const [backgroundError, setBackgroundError] = useState('')
   const [confirmClearAllData, setConfirmClearAllData] = useState(false)
   const [confirmDeleteProfile, setConfirmDeleteProfile] = useState(false)
-  const [newProfileName, setNewProfileName] = useState('')
   const [renameProfileName, setRenameProfileName] = useState(activeProfile?.name ?? '')
   const [editProfileOpen, setEditProfileOpen] = useState(false)
   const [editAuthMode, setEditAuthMode] = useState<'none' | 'pin' | 'password'>('none')
@@ -52,6 +106,13 @@ export function SettingsPage(): JSX.Element {
   const [editAuthSecretConfirm, setEditAuthSecretConfirm] = useState('')
   const [editProfileError, setEditProfileError] = useState('')
   const [savingProfileEdit, setSavingProfileEdit] = useState(false)
+  const [avatarEditorOpen, setAvatarEditorOpen] = useState(false)
+  const [avatarSourceDataUrl, setAvatarSourceDataUrl] = useState('')
+  const [avatarZoom, setAvatarZoom] = useState(1.15)
+  const [avatarOffsetX, setAvatarOffsetX] = useState(0)
+  const [avatarOffsetY, setAvatarOffsetY] = useState(0)
+  const [avatarEditorError, setAvatarEditorError] = useState('')
+  const [avatarEditorSaving, setAvatarEditorSaving] = useState(false)
   const t = (de: string, en: string) => tx(settings.language, de, en)
   const hasBackgroundImage = Boolean(backgroundImageDataUrl)
   const currencySymbol = getCurrencySymbol(settings.currency)
@@ -60,10 +121,16 @@ export function SettingsPage(): JSX.Element {
   const closeDeleteProfileConfirm = useCallback(() => setConfirmDeleteProfile(false), [])
   const closeClearAllDataConfirm = useCallback(() => setConfirmClearAllData(false), [])
   const closeImportSuccess = useCallback(() => setImportSuccessMessage(''), [])
+  const closeAvatarEditor = useCallback(() => {
+    setAvatarEditorOpen(false)
+    setAvatarEditorError('')
+    setAvatarEditorSaving(false)
+  }, [])
   const editProfileBackdropCloseGuard = useGuardedBackdropClose(closeEditProfile)
   const deleteProfileBackdropCloseGuard = useGuardedBackdropClose(closeDeleteProfileConfirm)
   const clearAllDataBackdropCloseGuard = useGuardedBackdropClose(closeClearAllDataConfirm)
   const importSuccessBackdropCloseGuard = useGuardedBackdropClose(closeImportSuccess)
+  const avatarEditorBackdropCloseGuard = useGuardedBackdropClose(closeAvatarEditor)
 
   async function exportJson(): Promise<void> {
     const payload = exportBackup()
@@ -156,22 +223,59 @@ export function SettingsPage(): JSX.Element {
       setConfirmClearAllData(false)
     } catch (error) {
       setConfirmClearAllData(false)
-      setImportError(error instanceof Error ? error.message : t('Alle Daten konnten nicht gelöscht werden.', 'Could not delete all data.'))
+      setImportError(error instanceof Error ? error.message : t('Profildaten konnten nicht gelöscht werden.', 'Could not delete profile data.'))
     }
   }
 
-  function handleCreateProfile(): void {
-    createProfile(newProfileName)
-    setRenameProfileName(newProfileName.trim())
-    setNewProfileName('')
+  async function onAvatarImageSelected(event: React.ChangeEvent<HTMLInputElement>): Promise<void> {
+    const file = event.target.files?.[0]
+    if (!file || !activeProfile) {
+      return
+    }
+    try {
+      setImportError('')
+      setAvatarEditorError('')
+      const dataUrl = await readFileAsDataUrl(file)
+      if (!dataUrl.startsWith('data:image/')) {
+        throw new Error('invalid-image')
+      }
+      setAvatarSourceDataUrl(dataUrl)
+      setAvatarZoom(1.15)
+      setAvatarOffsetX(0)
+      setAvatarOffsetY(0)
+      setAvatarEditorOpen(true)
+      event.target.value = ''
+    } catch {
+      setAvatarEditorError(t('Profilbild konnte nicht geladen werden.', 'Could not load profile image.'))
+    }
   }
 
-  function handleRenameActiveProfile(): void {
+  async function saveAvatarCrop(): Promise<void> {
+    if (!activeProfile || !avatarSourceDataUrl) {
+      return
+    }
+    try {
+      setAvatarEditorSaving(true)
+      setAvatarEditorError('')
+      const croppedDataUrl = await buildCroppedAvatarDataUrl(avatarSourceDataUrl, avatarZoom, avatarOffsetX, avatarOffsetY)
+      await updateProfileAvatar(activeProfile.id, croppedDataUrl)
+      closeAvatarEditor()
+    } catch {
+      setAvatarEditorError(t('Profilbild konnte nicht gespeichert werden.', 'Could not save profile image.'))
+    } finally {
+      setAvatarEditorSaving(false)
+    }
+  }
+
+  async function removeActiveProfileAvatar(): Promise<void> {
     if (!activeProfile) {
       return
     }
-    renameProfile(activeProfile.id, renameProfileName)
-    setRenameProfileName(renameProfileName.trim())
+    try {
+      await updateProfileAvatar(activeProfile.id, null)
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : t('Profilbild konnte nicht entfernt werden.', 'Could not remove profile image.'))
+    }
   }
 
   async function handleDeleteActiveProfile(): Promise<void> {
@@ -191,6 +295,7 @@ export function SettingsPage(): JSX.Element {
     if (!activeProfile) {
       return
     }
+    setRenameProfileName(activeProfile.name)
     setEditAuthMode(activeProfile.authMode)
     setEditAuthSecret('')
     setEditAuthSecretConfirm('')
@@ -202,6 +307,10 @@ export function SettingsPage(): JSX.Element {
     if (!activeProfile) {
       return
     }
+    if (!renameProfileName.trim()) {
+      setEditProfileError(t('Bitte gib einen Profilnamen ein.', 'Please enter a profile name.'))
+      return
+    }
     if (editAuthMode !== 'none' && editAuthSecret !== editAuthSecretConfirm) {
       setEditProfileError(t('PIN/Passwort stimmt nicht überein.', 'PIN/password does not match.'))
       return
@@ -209,6 +318,8 @@ export function SettingsPage(): JSX.Element {
     try {
       setSavingProfileEdit(true)
       setEditProfileError('')
+      renameProfile(activeProfile.id, renameProfileName)
+      setRenameProfileName(renameProfileName.trim())
       await updateProfileProtection(activeProfile.id, editAuthMode, editAuthMode === 'none' ? undefined : editAuthSecret)
       setEditProfileOpen(false)
     } catch (error) {
@@ -242,63 +353,34 @@ export function SettingsPage(): JSX.Element {
 
       <article className="card">
         <header className="section-header">
-          <h2>{t('Profile', 'Profiles')}</h2>
+          <h2>{t('Profile', 'Profile')}</h2>
         </header>
         <div className="setting-list">
-          <label>
-            {t('Aktives Profil', 'Active profile')}
-            <select
-              value={activeProfileId}
-              onChange={(event) => {
-                const nextId = event.target.value
-                switchProfile(nextId)
-                const nextProfile = profiles.find((profile) => profile.id === nextId)
-                setRenameProfileName(nextProfile?.name ?? '')
-              }}
-            >
-              {profiles.map((profile) => (
-                <option key={profile.id} value={profile.id}>
-                  {profile.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <section className="settings-group profile-settings-group">
+            <p className="settings-group-title">{t('Profilbild', 'Profile image')}</p>
+            <div className="profile-avatar-row">
+              <div className="profile-avatar profile-avatar-large" aria-hidden="true">
+                {activeProfile?.avatarDataUrl ? (
+                  <img src={activeProfile.avatarDataUrl} alt="" />
+                ) : (
+                  <span>{profileInitials(activeProfile?.name ?? 'User')}</span>
+                )}
+              </div>
+              <div className="inline-controls">
+                <label className="button button-secondary file-picker">
+                  {t('Bild wählen', 'Choose image')}
+                  <input type="file" accept="image/*" onChange={(event) => void onAvatarImageSelected(event)} />
+                </label>
+                <button type="button" className="button button-tertiary" onClick={() => void removeActiveProfileAvatar()} disabled={!activeProfile?.avatarDataUrl}>
+                  {t('Bild entfernen', 'Remove image')}
+                </button>
+              </div>
+            </div>
+          </section>
 
-	          <div className="job-row">
-	            <label>
-	              {t('Neues Profil', 'New profile')}
-              <input
-                value={newProfileName}
-                onChange={(event) => setNewProfileName(event.target.value)}
-                placeholder={t('z. B. Alex', 'e.g. Alex')}
-              />
-            </label>
-	            <div className="inline-controls">
-	              <button type="button" className="button button-secondary" onClick={handleCreateProfile}>
-	                {t('Profil hinzufügen', 'Add profile')}
-	              </button>
-	            </div>
-	            <small className="muted">
-	              {t(
-	                'Nach dem Hinzufügen startet die Einrichtung. Du kannst sie später verlassen und fortsetzen.',
-	                'After adding, setup starts. You can leave it and continue later.',
-	              )}
-	            </small>
-	          </div>
-
-          <div className="job-row">
-            <label>
-              {t('Profilname ändern', 'Rename profile')}
-              <input
-                value={renameProfileName}
-                onChange={(event) => setRenameProfileName(event.target.value)}
-                placeholder={t('Profilname', 'Profile name')}
-              />
-            </label>
-            <div className="inline-controls">
-              <button type="button" className="button button-secondary" onClick={handleRenameActiveProfile} disabled={!activeProfile}>
-                {t('Umbenennen', 'Rename')}
-              </button>
+          <section className="settings-group profile-settings-group">
+            <p className="settings-group-title">{t('Profilverwaltung', 'Profile management')}</p>
+            <div className="profile-actions-row">
               <button type="button" className="button button-secondary" onClick={openEditProfile} disabled={!activeProfile}>
                 {t('Profil bearbeiten', 'Edit profile')}
               </button>
@@ -311,7 +393,7 @@ export function SettingsPage(): JSX.Element {
                 {t('Profil löschen', 'Delete profile')}
               </button>
             </div>
-          </div>
+          </section>
         </div>
       </article>
 
@@ -573,15 +655,65 @@ export function SettingsPage(): JSX.Element {
           <p className="danger-zone-title">{t('Gefahrenbereich', 'Danger Zone')}</p>
           <p className="muted">
             {t(
-              'Löscht alle lokalen Daten dieser App: Abos, Einkommen, Zins-Szenarien, Einstellungen und Hintergrundbild.',
-              'Deletes all local data from this app: subscriptions, income, interest scenarios, settings and background image.',
+              'Löscht alle lokalen Daten des aktiven Profils: Abos, Einkommen, Einstellungen und Hintergrundbild.',
+              'Deletes all local data of the active profile: subscriptions, income, settings and background image.',
             )}
           </p>
           <button type="button" className="button button-danger" onClick={() => setConfirmClearAllData(true)}>
-            {t('Alle Daten löschen', 'Delete all data')}
+            {t('Alle Profildaten löschen', 'Delete profile data')}
           </button>
         </div>
       </article>
+
+      {avatarEditorOpen ? (
+        <div
+          className="form-modal-backdrop"
+          onMouseDown={avatarEditorBackdropCloseGuard.onBackdropMouseDown}
+          onClick={avatarEditorBackdropCloseGuard.onBackdropClick}
+          role="presentation"
+        >
+          <article className="card form-modal confirm-modal" onMouseDownCapture={avatarEditorBackdropCloseGuard.onModalMouseDownCapture} onClick={(event) => event.stopPropagation()}>
+            <header className="section-header">
+              <h2>{t('Profilbild zuschneiden', 'Crop profile image')}</h2>
+              <button type="button" className="icon-button" onClick={closeAvatarEditor} aria-label={t('Popup schließen', 'Close popup')}>
+                ×
+              </button>
+            </header>
+            <div className="setting-list">
+              <div className="avatar-crop-preview">
+                {avatarSourceDataUrl ? (
+                  <img
+                    src={avatarSourceDataUrl}
+                    alt=""
+                    style={{ transform: `translate(${avatarOffsetX}px, ${avatarOffsetY}px) scale(${avatarZoom})` }}
+                  />
+                ) : null}
+              </div>
+              <label>
+                {t('Zoom', 'Zoom')}
+                <input type="range" min={1} max={3} step={0.01} value={avatarZoom} onChange={(event) => setAvatarZoom(Number(event.target.value))} />
+              </label>
+              <label>
+                {t('Horizontaler Ausschnitt', 'Horizontal crop')}
+                <input type="range" min={-140} max={140} step={1} value={avatarOffsetX} onChange={(event) => setAvatarOffsetX(Number(event.target.value))} />
+              </label>
+              <label>
+                {t('Vertikaler Ausschnitt', 'Vertical crop')}
+                <input type="range" min={-140} max={140} step={1} value={avatarOffsetY} onChange={(event) => setAvatarOffsetY(Number(event.target.value))} />
+              </label>
+              {avatarEditorError ? <p className="error-text">{avatarEditorError}</p> : null}
+            </div>
+            <div className="form-actions">
+              <button type="button" className="button button-primary" onClick={() => void saveAvatarCrop()} disabled={avatarEditorSaving}>
+                {avatarEditorSaving ? t('Speichert...', 'Saving...') : t('Speichern', 'Save')}
+              </button>
+              <button type="button" className="button button-secondary" onClick={closeAvatarEditor} disabled={avatarEditorSaving}>
+                {t('Abbrechen', 'Cancel')}
+              </button>
+            </div>
+          </article>
+        </div>
+      ) : null}
 
       {editProfileOpen ? (
         <div
@@ -598,6 +730,14 @@ export function SettingsPage(): JSX.Element {
               </button>
             </header>
             <div className="setting-list">
+              <label>
+                {t('Profilname', 'Profile name')}
+                <input
+                  value={renameProfileName}
+                  onChange={(event) => setRenameProfileName(event.target.value)}
+                  placeholder={t('Profilname', 'Profile name')}
+                />
+              </label>
               <label>
                 {t('Schutzmodus', 'Protection mode')}
                 <select value={editAuthMode} onChange={(event) => setEditAuthMode(event.target.value as 'none' | 'pin' | 'password')}>
@@ -689,15 +829,15 @@ export function SettingsPage(): JSX.Element {
         >
           <article className="card form-modal confirm-modal" onMouseDownCapture={clearAllDataBackdropCloseGuard.onModalMouseDownCapture} onClick={(event) => event.stopPropagation()}>
             <header className="section-header">
-              <h2>{t('Alle Daten wirklich löschen?', 'Delete all data permanently?')}</h2>
+              <h2>{t('Alle Daten dieses Profils löschen?', 'Delete all data for this profile?')}</h2>
               <button type="button" className="icon-button" onClick={closeClearAllDataConfirm} aria-label={t('Popup schließen', 'Close popup')}>
                 ×
               </button>
             </header>
             <p>
               {t(
-                'Diese Aktion kann nicht rückgängig gemacht werden. Bitte vorher ein JSON-Backup exportieren.',
-                'This action cannot be undone. Please export a JSON backup first.',
+                'Diese Aktion betrifft nur das aktive Profil und kann nicht rückgängig gemacht werden. Bitte vorher ein JSON-Backup exportieren.',
+                'This action affects only the active profile and cannot be undone. Please export a JSON backup first.',
               )}
             </p>
             <div className="form-actions">

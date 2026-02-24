@@ -4,10 +4,6 @@ import {
   clearBackgroundImageDataUrl,
   defaultSettings,
   defaultUiState,
-  loadBackgroundImageDataUrl,
-  loadSkippedUpdateVersion,
-  loadSettings,
-  loadUiState,
   saveBackgroundImageDataUrl,
   saveSkippedUpdateVersion,
   saveSettings,
@@ -31,16 +27,12 @@ import {
 import { deleteProfileDb } from '../data/db'
 import {
   DEFAULT_PROFILE_ID,
-  hasLegacyLocalData,
-  loadActiveProfileId,
-  loadProfiles,
   makeProfile,
   saveActiveProfileId,
   saveProfiles,
 } from '../data/profileStore'
 import type {
   AppBackup,
-  AppLanguage,
   IncomeEntry,
   InterestScenario,
   InterestScenarioInput,
@@ -55,6 +47,24 @@ import type {
 } from '../types/models'
 import { tx } from '../utils/i18n'
 import { isTauriRuntime } from '../utils/runtime'
+import {
+  MAX_BACKGROUND_FILE_BYTES,
+  buildInitialProfileState,
+  collapsePendingProfiles,
+  ensurePositiveNumber,
+  hashSecret,
+  loadPersistedProfilePreferences,
+  makeId,
+  normalizeCurrency,
+  normalizeImportedSettings,
+  normalizeImportedUiState,
+  normalizeTags,
+  nowIso,
+  readFileAsDataUrl,
+  resolveUniqueProfileName,
+  uniqueById,
+} from './appContextHelpers'
+import { useAppUpdates } from './useAppUpdates'
 
 export interface OnboardingSetupInput {
   language: Settings['language']
@@ -80,6 +90,7 @@ export interface AppContextValue {
   profiles: UserProfile[]
   activeProfileId: string
   activeProfile: UserProfile | null
+  isProfileLocked: boolean
   needsOnboarding: boolean
   canExitOnboarding: boolean
   updatesSupported: boolean
@@ -95,10 +106,13 @@ export interface AppContextValue {
   createProfile: (name: string) => void
   switchProfile: (profileId: string) => void
   renameProfile: (profileId: string, name: string) => void
+  updateProfileAvatar: (profileId: string, avatarDataUrl: string | null) => Promise<void>
   deleteProfile: (profileId: string) => Promise<void>
   completeOnboarding: (payload: OnboardingSetupInput) => Promise<void>
   exitOnboarding: () => void
   updateProfileProtection: (profileId: string, authMode: UserProfile['authMode'], authSecret?: string) => Promise<void>
+  unlockActiveProfile: (authSecret: string) => Promise<void>
+  lockActiveProfile: () => void
   addSubscription: (payload: Omit<Subscription, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>
   updateSubscription: (id: string, payload: Partial<Subscription>) => Promise<void>
   deleteSubscription: (id: string) => Promise<void>
@@ -122,207 +136,52 @@ export interface AppContextValue {
 // eslint-disable-next-line react-refresh/only-export-components
 export const AppContext = createContext<AppContextValue | null>(null)
 
-const SUPPORTED_CURRENCIES = ['EUR', 'USD'] as const
-type SupportedCurrency = (typeof SUPPORTED_CURRENCIES)[number]
-
-function nowIso(): string {
-  return new Date().toISOString()
-}
-
-function makeId(): string {
-  return crypto.randomUUID()
-}
-
-function uniqueById<T extends { id: string }>(rows: T[]): T[] {
-  const map = new Map<string, T>()
-  for (const row of rows) {
-    map.set(row.id, row)
-  }
-  return [...map.values()]
-}
-
-function ensurePositiveNumber(value: number, fieldLabel: string, language: AppLanguage): void {
-  if (!Number.isFinite(value) || value < 0) {
-    throw new Error(tx(language, `${fieldLabel} muss eine gültige nicht-negative Zahl sein.`, `${fieldLabel} must be a valid non-negative number.`))
-  }
-}
-
-function normalizeTags(input: string[]): string[] {
-  return input
-    .map((item) => item.trim())
-    .filter((item) => item.length > 0)
-    .slice(0, 10)
-}
-
-function normalizeImportedShiftJobs(raw: unknown): ShiftJobConfig[] {
-  if (!Array.isArray(raw)) {
-    return []
-  }
-  return raw
-    .map((row) => {
-      if (!row || typeof row !== 'object') {
-        return null
-      }
-      const job = row as { id?: unknown; name?: unknown; hourlyRate?: unknown }
-      const name = typeof job.name === 'string' ? job.name.trim() : ''
-      const hourlyRate = Number(job.hourlyRate)
-      if (!name || !Number.isFinite(hourlyRate) || hourlyRate <= 0) {
-        return null
-      }
-      const id = typeof job.id === 'string' && job.id.trim() ? job.id : makeId()
-      return { id, name, hourlyRate }
-    })
-    .filter((job): job is ShiftJobConfig => job !== null)
-}
-
-function normalizeCurrency(value: unknown): SupportedCurrency {
-  if (typeof value !== 'string') {
-    return defaultSettings.currency
-  }
-  const upper = value.toUpperCase()
-  return SUPPORTED_CURRENCIES.includes(upper as SupportedCurrency) ? (upper as SupportedCurrency) : defaultSettings.currency
-}
-
-function normalizeImportedSettings(raw: unknown): Settings {
-  if (!raw || typeof raw !== 'object') {
-    return defaultSettings
-  }
-  const candidate = raw as Partial<Settings> & { shiftJobs?: unknown; defaultShiftJobId?: unknown }
-  const shiftJobs = normalizeImportedShiftJobs(candidate.shiftJobs)
-  const defaultShiftJobId =
-    typeof candidate.defaultShiftJobId === 'string' && shiftJobs.some((job) => job.id === candidate.defaultShiftJobId)
-      ? candidate.defaultShiftJobId
-      : shiftJobs[0]?.id ?? ''
-
-  return {
-    ...defaultSettings,
-    ...candidate,
-    currency: normalizeCurrency(candidate.currency),
-    shiftJobs,
-    defaultShiftJobId,
-  }
-}
-
-function normalizeImportedUiState(raw: unknown): UiState {
-  if (!raw || typeof raw !== 'object') {
-    return defaultUiState
-  }
-  const candidate = raw as Partial<UiState>
-  return {
-    ...defaultUiState,
-    ...candidate,
-  }
-}
-
-const MAX_BACKGROUND_FILE_BYTES = 3 * 1024 * 1024
-
-interface UpdaterHandle {
-  currentVersion: string
-  version: string
-  date?: string
-  body?: string
-  downloadAndInstall: () => Promise<void>
-  close: () => Promise<void>
-}
-
-function readFileAsDataUrl(file: File, language: AppLanguage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onerror = () => reject(new Error(tx(language, 'Ausgewählte Bilddatei konnte nicht gelesen werden.', 'Selected image file could not be read.')))
-    reader.onload = () => {
-      if (typeof reader.result !== 'string') {
-        reject(new Error(tx(language, 'Ausgewählte Bilddatei konnte nicht verarbeitet werden.', 'Selected image file could not be processed.')))
-        return
-      }
-      resolve(reader.result)
-    }
-    reader.readAsDataURL(file)
-  })
-}
-
-async function safelyCloseUpdateHandle(handle: UpdaterHandle | null): Promise<void> {
-  if (!handle) {
-    return
-  }
-  try {
-    await handle.close()
-  } catch {
-    // Ignore close errors. They are non-fatal and should not block update checks.
-  }
-}
-
-function resolveInitialProfileName(): string {
-  const locale = typeof navigator !== 'undefined' ? navigator.language.toLowerCase() : 'en'
-  return locale.startsWith('de') ? 'Standard' : 'Default'
-}
-
-function resolveUniqueProfileName(name: string, profiles: UserProfile[], language: AppLanguage): string {
-  const base = (name.trim() || tx(language, 'Neues Profil', 'New profile')).slice(0, 40)
-  if (!profiles.some((profile) => profile.name.toLowerCase() === base.toLowerCase())) {
-    return base
-  }
-  let counter = 2
-  while (profiles.some((profile) => profile.name.toLowerCase() === `${base} (${counter})`.toLowerCase())) {
-    counter += 1
-  }
-  return `${base} (${counter})`
-}
-
-async function hashSecret(secret: string): Promise<string> {
-  const normalized = secret.trim()
-  if (!normalized) {
-    return ''
-  }
-  const data = new TextEncoder().encode(normalized)
-  const digest = await crypto.subtle.digest('SHA-256', data)
-  const bytes = Array.from(new Uint8Array(digest))
-  return bytes.map((byte) => byte.toString(16).padStart(2, '0')).join('')
-}
-
-function buildInitialProfileState(): { profiles: UserProfile[]; activeProfileId: string } {
-  let profiles = loadProfiles()
-  if (profiles.length === 0) {
-    const seededProfile = makeProfile(resolveInitialProfileName(), {
-      id: DEFAULT_PROFILE_ID,
-      onboardingCompleted: hasLegacyLocalData(),
-    })
-    profiles = [seededProfile]
-    saveProfiles(profiles)
-    saveActiveProfileId(seededProfile.id)
-  }
-  const activeProfileId = loadActiveProfileId(profiles) || profiles[0]?.id || ''
-  if (activeProfileId) {
-    saveActiveProfileId(activeProfileId)
-  }
-  return { profiles, activeProfileId }
-}
-
 export function AppProvider({ children }: { children: ReactNode }): JSX.Element {
   const initialProfileState = useMemo(() => buildInitialProfileState(), [])
+  const initialPersistedPreferences = useMemo(
+    () => loadPersistedProfilePreferences(initialProfileState.activeProfileId),
+    [initialProfileState.activeProfileId],
+  )
   const [loading, setLoading] = useState(true)
   const [profiles, setProfilesState] = useState<UserProfile[]>(initialProfileState.profiles)
   const [activeProfileId, setActiveProfileIdState] = useState<string>(initialProfileState.activeProfileId)
-  const [settings, setSettingsState] = useState<Settings>(() => loadSettings(initialProfileState.activeProfileId))
-  const [backgroundImageDataUrl, setBackgroundImageDataUrlState] = useState<string | null>(() => loadBackgroundImageDataUrl(initialProfileState.activeProfileId))
-  const [uiState, setUiStateState] = useState<UiState>(() => loadUiState(initialProfileState.activeProfileId))
+  const [settings, setSettingsState] = useState<Settings>(initialPersistedPreferences.settings)
+  const [backgroundImageDataUrl, setBackgroundImageDataUrlState] = useState<string | null>(
+    initialPersistedPreferences.backgroundImageDataUrl,
+  )
+  const [uiState, setUiStateState] = useState<UiState>(initialPersistedPreferences.uiState)
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([])
   const [incomeEntries, setIncomeEntries] = useState<IncomeEntry[]>([])
   const [scenarios, setScenarios] = useState<InterestScenario[]>([])
   const [toasts, setToasts] = useState<ToastMessage[]>([])
-  const [pendingUpdate, setPendingUpdate] = useState<UpdaterHandle | null>(null)
-  const [updatePrompt, setUpdatePrompt] = useState<UpdatePrompt | null>(null)
-  const [isCheckingForUpdates, setIsCheckingForUpdates] = useState(false)
-  const [isInstallingUpdate, setIsInstallingUpdate] = useState(false)
-  const [updateCheckError, setUpdateCheckError] = useState<string | null>(null)
-  const [skippedUpdateVersion, setSkippedUpdateVersion] = useState<string>(() => loadSkippedUpdateVersion(initialProfileState.activeProfileId))
+  const [skippedUpdateVersion, setSkippedUpdateVersion] = useState<string>(initialPersistedPreferences.skippedUpdateVersion)
+  const [isActiveProfileUnlocked, setIsActiveProfileUnlocked] = useState(false)
+  const [hydratedProfileId, setHydratedProfileId] = useState('')
 
   const updatesSupported = isTauriRuntime()
   const activeProfile = useMemo(() => profiles.find((profile) => profile.id === activeProfileId) ?? null, [activeProfileId, profiles])
+  const isProfileLocked = Boolean(activeProfile && activeProfile.authMode !== 'none' && !isActiveProfileUnlocked)
   const needsOnboarding = Boolean(activeProfile && !activeProfile.onboardingCompleted)
   const canExitOnboarding = useMemo(
     () => needsOnboarding && profiles.some((profile) => profile.id !== activeProfileId && profile.onboardingCompleted),
     [activeProfileId, needsOnboarding, profiles],
   )
+
+  useEffect(() => {
+    const collapsedPending = collapsePendingProfiles(profiles, activeProfileId)
+    if (!collapsedPending.changed) {
+      return
+    }
+    saveProfiles(collapsedPending.profiles)
+    setProfilesState(collapsedPending.profiles)
+    const nextActiveId = collapsedPending.profiles.some((profile) => profile.id === activeProfileId)
+      ? activeProfileId
+      : (collapsedPending.profiles[0]?.id ?? '')
+    if (nextActiveId !== activeProfileId) {
+      saveActiveProfileId(nextActiveId)
+      setActiveProfileIdState(nextActiveId)
+    }
+  }, [activeProfileId, profiles])
 
   const dismissToast = useCallback((id: string) => {
     setToasts((current) => current.filter((item) => item.id !== id))
@@ -339,6 +198,23 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
     [dismissToast],
   )
 
+  const {
+    isCheckingForUpdates,
+    isInstallingUpdate,
+    updateCheckError,
+    updatePrompt,
+    checkForUpdates,
+    installUpdate,
+    skipUpdateVersion,
+    dismissUpdatePrompt,
+  } = useAppUpdates({
+    updatesSupported,
+    language: settings.language,
+    skippedUpdateVersion,
+    setSkippedUpdateVersion,
+    pushToast,
+  })
+
   useEffect(() => {
     if (!activeProfileId) {
       return
@@ -346,6 +222,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
     let mounted = true
     async function boot(): Promise<void> {
       setLoading(true)
+      setHydratedProfileId('')
       try {
         const [loadedSubscriptions, loadedIncomeEntries, loadedScenarios] = await Promise.all([
           listSubscriptions(activeProfileId),
@@ -355,10 +232,11 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
         if (!mounted) {
           return
         }
-        setSettingsState(loadSettings(activeProfileId))
-        setUiStateState(loadUiState(activeProfileId))
-        setBackgroundImageDataUrlState(loadBackgroundImageDataUrl(activeProfileId))
-        setSkippedUpdateVersion(loadSkippedUpdateVersion(activeProfileId))
+        const persistedPreferences = loadPersistedProfilePreferences(activeProfileId)
+        setSettingsState(persistedPreferences.settings)
+        setUiStateState(persistedPreferences.uiState)
+        setBackgroundImageDataUrlState(persistedPreferences.backgroundImageDataUrl)
+        setSkippedUpdateVersion(persistedPreferences.skippedUpdateVersion)
         setSubscriptions(loadedSubscriptions)
         setIncomeEntries(loadedIncomeEntries)
         setScenarios(loadedScenarios)
@@ -380,6 +258,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
         }
       } finally {
         if (mounted) {
+          setHydratedProfileId(activeProfileId)
           setLoading(false)
         }
       }
@@ -391,25 +270,30 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
   }, [activeProfileId, pushToast, settings.language])
 
   useEffect(() => {
-    if (!activeProfileId) {
+    if (!activeProfileId || hydratedProfileId !== activeProfileId) {
       return
     }
     saveSettings(activeProfileId, settings)
-  }, [activeProfileId, settings])
+  }, [activeProfileId, hydratedProfileId, settings])
 
   useEffect(() => {
-    if (!activeProfileId) {
+    if (!activeProfileId || hydratedProfileId !== activeProfileId) {
       return
     }
     saveUiState(activeProfileId, uiState)
-  }, [activeProfileId, uiState])
+  }, [activeProfileId, hydratedProfileId, uiState])
 
   useEffect(() => {
-    if (!activeProfileId) {
+    if (!activeProfileId || hydratedProfileId !== activeProfileId) {
       return
     }
     saveSkippedUpdateVersion(activeProfileId, skippedUpdateVersion)
-  }, [activeProfileId, skippedUpdateVersion])
+  }, [activeProfileId, hydratedProfileId, skippedUpdateVersion])
+
+  useEffect(() => {
+    // Every profile switch requires a new unlock for protected profiles.
+    setIsActiveProfileUnlocked(false)
+  }, [activeProfileId])
 
   const setSettings = useCallback((changes: Partial<Settings>) => {
     setSettingsState((current) => ({
@@ -425,6 +309,20 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
 
   const createProfile = useCallback(
     (name: string) => {
+      const existingPending = profiles.find((profile) => !profile.onboardingCompleted)
+      if (existingPending) {
+        saveActiveProfileId(existingPending.id)
+        setActiveProfileIdState(existingPending.id)
+        pushToast({
+          tone: 'warning',
+          text: tx(
+            settings.language,
+            'Ein neues Profil ist bereits in Einrichtung. Bitte schließe es zuerst ab.',
+            'A new profile is already in setup. Please finish it first.',
+          ),
+        })
+        return
+      }
       const profileName = resolveUniqueProfileName(name, profiles, settings.language)
       const nextProfile = makeProfile(profileName, { onboardingCompleted: false })
       const nextProfiles = [...profiles, nextProfile]
@@ -463,6 +361,32 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       setProfilesState(nextProfiles)
     },
     [profiles, settings.language],
+  )
+
+  const updateProfileAvatar = useCallback(
+    async (profileId: string, avatarDataUrl: string | null) => {
+      const target = profiles.find((profile) => profile.id === profileId)
+      if (!target) {
+        throw new Error(tx(settings.language, 'Profil nicht gefunden.', 'Profile not found.'))
+      }
+      if (avatarDataUrl && !avatarDataUrl.startsWith('data:image/')) {
+        throw new Error(tx(settings.language, 'Ungültiges Profilbild.', 'Invalid profile image.'))
+      }
+      const nextProfiles = profiles.map((profile) =>
+        profile.id === profileId
+          ? { ...profile, avatarDataUrl: avatarDataUrl ?? null, updatedAt: nowIso() }
+          : profile,
+      )
+      saveProfiles(nextProfiles)
+      setProfilesState(nextProfiles)
+      pushToast({
+        tone: 'success',
+        text: avatarDataUrl
+          ? tx(settings.language, 'Profilbild aktualisiert.', 'Profile image updated.')
+          : tx(settings.language, 'Profilbild entfernt.', 'Profile image removed.'),
+      })
+    },
+    [profiles, pushToast, settings.language],
   )
 
   const deleteProfile = useCallback(
@@ -557,6 +481,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
         saveProfiles(next)
         return next
       })
+      setIsActiveProfileUnlocked(payload.authMode !== 'none')
       pushToast({ tone: 'success', text: tx(payload.language, 'Einrichtung abgeschlossen.', 'Setup completed.') })
     },
     [activeProfileId, pushToast],
@@ -608,10 +533,42 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       )
       saveProfiles(nextProfiles)
       setProfilesState(nextProfiles)
+      if (profileId === activeProfileId) {
+        setIsActiveProfileUnlocked(authMode !== 'none')
+      }
       pushToast({ tone: 'success', text: tx(settings.language, 'Profilschutz aktualisiert.', 'Profile protection updated.') })
     },
-    [profiles, pushToast, settings.language],
+    [activeProfileId, profiles, pushToast, settings.language],
   )
+
+  const unlockActiveProfile = useCallback(
+    async (authSecret: string) => {
+      if (!activeProfile) {
+        throw new Error(tx(settings.language, 'Kein aktives Profil gefunden.', 'No active profile found.'))
+      }
+      if (activeProfile.authMode === 'none') {
+        setIsActiveProfileUnlocked(true)
+        return
+      }
+
+      if (!activeProfile.authSecretHash) {
+        // Backward compatibility fallback for incomplete legacy profile metadata.
+        setIsActiveProfileUnlocked(true)
+        return
+      }
+
+      const candidateHash = await hashSecret(authSecret)
+      if (!candidateHash || candidateHash !== activeProfile.authSecretHash) {
+        throw new Error(tx(settings.language, 'PIN/Passwort ist nicht korrekt.', 'PIN/password is incorrect.'))
+      }
+      setIsActiveProfileUnlocked(true)
+    },
+    [activeProfile, settings.language],
+  )
+
+  const lockActiveProfile = useCallback(() => {
+    setIsActiveProfileUnlocked(false)
+  }, [])
 
   const setBackgroundImageFromFile = useCallback(
     async (file: File) => {
@@ -837,10 +794,14 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
   )
 
   const exportBackup = useCallback((): AppBackup => {
+    if (isProfileLocked) {
+      throw new Error(tx(settings.language, 'Profil ist gesperrt. Bitte zuerst entsperren.', 'Profile is locked. Please unlock first.'))
+    }
     const profileMeta: ProfileBackupPayload['meta'] = activeProfile
       ? {
           id: activeProfile.id,
           name: activeProfile.name,
+          avatarDataUrl: activeProfile.avatarDataUrl,
           createdAt: activeProfile.createdAt,
           updatedAt: activeProfile.updatedAt,
           lastOpenedAt: activeProfile.lastOpenedAt,
@@ -851,6 +812,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       : {
           id: activeProfileId || DEFAULT_PROFILE_ID,
           name: 'User',
+          avatarDataUrl: null,
           createdAt: nowIso(),
           updatedAt: nowIso(),
           lastOpenedAt: nowIso(),
@@ -873,10 +835,13 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
         interestScenarios: scenarios,
       },
     }
-  }, [activeProfile, activeProfileId, backgroundImageDataUrl, incomeEntries, scenarios, settings, subscriptions, uiState])
+  }, [activeProfile, activeProfileId, backgroundImageDataUrl, incomeEntries, isProfileLocked, scenarios, settings, subscriptions, uiState])
 
   const importBackup = useCallback(
     async (payload: AppBackup, mode: 'replace' | 'merge') => {
+      if (isProfileLocked) {
+        throw new Error(tx(settings.language, 'Profil ist gesperrt. Bitte zuerst entsperren.', 'Profile is locked. Please unlock first.'))
+      }
       if (!activeProfileId) {
         throw new Error(tx(settings.language, 'Kein aktives Profil gefunden.', 'No active profile found.'))
       }
@@ -896,10 +861,13 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
               meta: {
                 id: activeProfileId,
                 name: activeProfile?.name ?? 'User',
+                avatarDataUrl: activeProfile?.avatarDataUrl ?? null,
                 createdAt: activeProfile?.createdAt ?? nowIso(),
                 updatedAt: nowIso(),
                 lastOpenedAt: nowIso(),
                 onboardingCompleted: activeProfile?.onboardingCompleted ?? true,
+                authMode: activeProfile?.authMode ?? 'none',
+                authSecretHash: activeProfile?.authSecretHash ?? '',
               },
               settings: payload.settings ?? defaultSettings,
               uiState: payload.uiState ?? defaultUiState,
@@ -945,167 +913,41 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
             : tx(settings.language, 'Backup importiert (zusammenführen).', 'Backup imported (merge).'),
       })
     },
-    [activeProfile, activeProfileId, incomeEntries, pushToast, scenarios, settings.language, subscriptions],
+    [activeProfile, activeProfileId, incomeEntries, isProfileLocked, pushToast, scenarios, settings.language, subscriptions],
   )
-
-  const dismissUpdatePrompt = useCallback(() => {
-    setUpdatePrompt(null)
-    setPendingUpdate((current) => {
-      void safelyCloseUpdateHandle(current)
-      return null
-    })
-  }, [])
-
-  const skipUpdateVersion = useCallback(() => {
-    if (!updatePrompt) {
-      return
-    }
-    setSkippedUpdateVersion(updatePrompt.version)
-    dismissUpdatePrompt()
-    pushToast({
-      tone: 'info',
-      text: tx(
-        settings.language,
-        `Version ${updatePrompt.version} wird bis zur nächsten Version übersprungen.`,
-        `Version ${updatePrompt.version} will be skipped until the next version.`,
-      ),
-    })
-  }, [dismissUpdatePrompt, pushToast, settings.language, updatePrompt])
-
-  const checkForUpdates = useCallback(
-    async (options?: { manual?: boolean }): Promise<boolean> => {
-      const manual = Boolean(options?.manual)
-      if (!updatesSupported) {
-        if (manual) {
-          pushToast({
-            tone: 'info',
-            text: tx(
-              settings.language,
-              'Updates werden nur in der Desktop-App unterstützt.',
-              'Updates are only supported in the desktop app.',
-            ),
-          })
-        }
-        return false
-      }
-
-      setIsCheckingForUpdates(true)
-      setUpdateCheckError(null)
-
-      try {
-        const { check } = await import('@tauri-apps/plugin-updater')
-        const update = await check()
-
-        if (!update) {
-          dismissUpdatePrompt()
-          if (manual) {
-            pushToast({
-              tone: 'success',
-              text: tx(settings.language, 'Kein Update verfügbar. Du bist aktuell.', 'No update available. You are up to date.'),
-            })
-          }
-          return false
-        }
-
-        if (!manual && skippedUpdateVersion && skippedUpdateVersion === update.version) {
-          await update.close()
-          return false
-        }
-
-        setPendingUpdate((current) => {
-          void safelyCloseUpdateHandle(current)
-          return {
-            currentVersion: update.currentVersion,
-            version: update.version,
-            date: update.date,
-            body: update.body,
-            downloadAndInstall: () => update.downloadAndInstall(),
-            close: () => update.close(),
-          }
-        })
-        setUpdatePrompt({
-          currentVersion: update.currentVersion,
-          version: update.version,
-          date: update.date,
-          body: update.body,
-        })
-        setSkippedUpdateVersion((current) => (current === update.version ? '' : current))
-        return true
-      } catch (error) {
-        const message =
-          error instanceof Error
-            ? error.message
-            : tx(settings.language, 'Update-Prüfung ist fehlgeschlagen.', 'Update check failed.')
-        setUpdateCheckError(message)
-        if (manual) {
-          pushToast({ tone: 'error', text: message, expiresInMs: 0 })
-        }
-        return false
-      } finally {
-        setIsCheckingForUpdates(false)
-      }
-    },
-    [dismissUpdatePrompt, pushToast, settings.language, skippedUpdateVersion, updatesSupported],
-  )
-
-  const installUpdate = useCallback(async () => {
-    if (!pendingUpdate) {
-      throw new Error(tx(settings.language, 'Kein Update zum Installieren verfügbar.', 'No update available to install.'))
-    }
-
-    setIsInstallingUpdate(true)
-    setUpdateCheckError(null)
-    try {
-      await pendingUpdate.downloadAndInstall()
-      pushToast({
-        tone: 'success',
-        text: tx(settings.language, 'Update wird installiert. App startet ggf. neu.', 'Update is being installed. The app may restart.'),
-      })
-      await safelyCloseUpdateHandle(pendingUpdate)
-      setSkippedUpdateVersion('')
-      setUpdatePrompt(null)
-      setPendingUpdate(null)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : tx(settings.language, 'Update-Installation fehlgeschlagen.', 'Update installation failed.')
-      setUpdateCheckError(message)
-      pushToast({ tone: 'error', text: message, expiresInMs: 0 })
-      throw error
-    } finally {
-      setIsInstallingUpdate(false)
-    }
-  }, [pendingUpdate, pushToast, settings.language])
 
   const clearAllData = useCallback(async () => {
-    for (const profile of profiles) {
-      await Promise.all([
-        replaceSubscriptions(profile.id, []),
-        replaceIncomeEntries(profile.id, []),
-        replaceInterestScenarios(profile.id, []),
-      ])
-      clearPersistedPreferences(profile.id)
-      await deleteProfileDb(profile.id)
-      clearRepositoryCache(profile.id)
+    if (isProfileLocked) {
+      throw new Error(tx(settings.language, 'Profil ist gesperrt. Bitte zuerst entsperren.', 'Profile is locked. Please unlock first.'))
     }
-    const nextProfile = makeProfile(resolveInitialProfileName(), { id: DEFAULT_PROFILE_ID, onboardingCompleted: false })
-    saveProfiles([nextProfile])
-    saveActiveProfileId(nextProfile.id)
-    setPendingUpdate((current) => {
-      void safelyCloseUpdateHandle(current)
-      return null
-    })
-    setUpdatePrompt(null)
+    if (!activeProfileId) {
+      throw new Error(tx(settings.language, 'Kein aktives Profil gefunden.', 'No active profile found.'))
+    }
+    await Promise.all([
+      replaceSubscriptions(activeProfileId, []),
+      replaceIncomeEntries(activeProfileId, []),
+      replaceInterestScenarios(activeProfileId, []),
+    ])
+    clearPersistedPreferences(activeProfileId)
+    await deleteProfileDb(activeProfileId)
+    clearRepositoryCache(activeProfileId)
+
     setSkippedUpdateVersion('')
-    setUpdateCheckError(null)
-    setProfilesState([nextProfile])
-    setActiveProfileIdState(nextProfile.id)
     setSubscriptions([])
     setIncomeEntries([])
     setScenarios([])
     setSettingsState(defaultSettings)
     setUiStateState(defaultUiState)
     setBackgroundImageDataUrlState(null)
-    pushToast({ tone: 'warning', text: tx(settings.language, 'Alle lokalen Daten wurden gelöscht.', 'All local data has been deleted.') })
-  }, [profiles, pushToast, settings.language])
+    pushToast({
+      tone: 'warning',
+      text: tx(
+        settings.language,
+        'Alle lokalen Daten dieses Profils wurden gelöscht.',
+        'All local data for this profile has been deleted.',
+      ),
+    })
+  }, [activeProfileId, isProfileLocked, pushToast, settings.language])
 
   const contextValue = useMemo<AppContextValue>(
     () => ({
@@ -1120,6 +962,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       profiles,
       activeProfileId,
       activeProfile,
+      isProfileLocked,
       needsOnboarding,
       canExitOnboarding,
       updatesSupported,
@@ -1135,10 +978,13 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       createProfile,
       switchProfile,
       renameProfile,
+      updateProfileAvatar,
       deleteProfile,
       completeOnboarding,
       exitOnboarding,
       updateProfileProtection,
+      unlockActiveProfile,
+      lockActiveProfile,
       addSubscription,
       updateSubscription,
       deleteSubscription,
@@ -1163,6 +1009,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       addSubscription,
       activeProfile,
       activeProfileId,
+      isProfileLocked,
       canExitOnboarding,
       checkForUpdates,
       completeOnboarding,
@@ -1185,6 +1032,8 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       profiles,
       renameProfile,
       updateProfileProtection,
+      unlockActiveProfile,
+      lockActiveProfile,
       scenarios,
       setSettings,
       setUiState,
@@ -1196,6 +1045,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       skipUpdateVersion,
       subscriptions,
       switchProfile,
+      updateProfileAvatar,
       toasts,
       uiState,
       updateCheckError,
@@ -1210,4 +1060,6 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
 
   return <AppContext.Provider value={contextValue}>{children}</AppContext.Provider>
 }
+
+
 
