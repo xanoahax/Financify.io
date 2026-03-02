@@ -46,6 +46,15 @@ export type Frequency = 'monthly' | 'yearly'
 export type EmploymentType = 'casual' | 'fixed'
 export type FixedPayInterval = 'monthly' | 'biweekly' | 'weekly'
 
+export interface FixedSalaryRevision {
+  startDate: string
+  endDate?: string | null
+  salaryAmount: number
+  fixedPayInterval: FixedPayInterval
+  has13thSalary: boolean
+  has14thSalary: boolean
+}
+
 export type HouseholdType = 'house' | 'rental' | 'owned' | 'shared' | 'other'
 export type HouseholdCostFrequency = 'weekly' | 'biweekly' | 'monthly' | 'yearly' | 'one_time'
 export type HouseholdCostStatus = 'active' | 'paused' | 'ended'
@@ -122,6 +131,7 @@ export interface ShiftJobConfig {
   has13thSalary?: boolean
   has14thSalary?: boolean
   startDate?: string
+  fixedSalaryRevisions?: FixedSalaryRevision[]
 }
 
 export interface InterestScenarioInput {

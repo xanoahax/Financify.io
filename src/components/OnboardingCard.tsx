@@ -272,13 +272,13 @@ export function OnboardingCard(props: OnboardingCardProps): JSX.Element {
 
             {jobEmploymentType === 'casual' ? (
               <label>
-                {tx(language, 'Stundensatz (optional)', 'Hourly rate (optional)')}
+                {tx(language, 'Stundensatz (netto, optional)', 'Hourly rate (net, optional)')}
                 <input type="number" min={0.01} step="0.01" value={jobRate} onChange={(event) => setJobRate(event.target.value)} />
               </label>
             ) : (
               <>
                 <label>
-                  {tx(language, 'Gehalt (pro Auszahlung)', 'Salary (per payout)')}
+                  {tx(language, 'Gehalt (netto, pro Auszahlung)', 'Salary (net, per payout)')}
                   <input type="number" min={0.01} step="0.01" value={jobSalaryAmount} onChange={(event) => setJobSalaryAmount(event.target.value)} />
                 </label>
                 <label>

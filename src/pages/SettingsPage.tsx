@@ -2,10 +2,12 @@ import { useCallback, useState } from 'react'
 import packageJson from '../../package.json'
 import { useGuardedBackdropClose } from '../hooks/useGuardedBackdropClose'
 import { useAppContext } from '../state/useAppContext'
-import type { AppBackup, EmploymentType, FixedPayInterval, ShiftJobConfig } from '../types/models'
+import type { AppBackup, EmploymentType, FixedPayInterval, IncomeEntry, ShiftJobConfig } from '../types/models'
+import { addDays, compareDateStrings } from '../utils/date'
 import { saveTextFileWithDialog } from '../utils/csv'
 import { getCurrencySymbol } from '../utils/format'
 import { tx } from '../utils/i18n'
+import { calculateShiftIncome } from '../utils/shiftIncome'
 
 const accentPresets = ['#0a84ff', '#2ec4b6', '#ff9f0a', '#bf5af2', '#ff375f', '#6e6e73']
 
@@ -15,10 +17,11 @@ interface JobDraftState {
   hourlyRate: string
   salaryAmount: string
   fixedPayInterval: FixedPayInterval
-  has13thSalary: boolean
-  has14thSalary: boolean
+  salaryPaymentsPerYear: '12' | '13' | '14'
   startDate: string
 }
+
+type FixedJobChangeScope = 'retroactive' | 'from-date'
 
 function makeJobId(): string {
   return `job-${crypto.randomUUID()}`
@@ -26,6 +29,77 @@ function makeJobId(): string {
 
 function todayDateString(): string {
   return new Date().toISOString().slice(0, 10)
+}
+
+function salaryPaymentsToFlags(value: JobDraftState['salaryPaymentsPerYear']): { has13thSalary: boolean; has14thSalary: boolean } {
+  if (value === '14') {
+    return { has13thSalary: true, has14thSalary: true }
+  }
+  if (value === '13') {
+    return { has13thSalary: true, has14thSalary: false }
+  }
+  return { has13thSalary: false, has14thSalary: false }
+}
+
+function flagsToSalaryPayments(has13thSalary: boolean, has14thSalary: boolean): JobDraftState['salaryPaymentsPerYear'] {
+  if (has14thSalary) {
+    return '14'
+  }
+  if (has13thSalary) {
+    return '13'
+  }
+  return '12'
+}
+
+function isDateString(value: unknown): value is string {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+}
+
+function resolveFixedSalaryRevisions(job: ShiftJobConfig): NonNullable<ShiftJobConfig['fixedSalaryRevisions']> {
+  const revisions = Array.isArray(job.fixedSalaryRevisions)
+    ? job.fixedSalaryRevisions
+        .filter((revision) => isDateString(revision.startDate))
+        .map((revision) => ({
+          startDate: revision.startDate,
+          endDate: isDateString(revision.endDate) ? revision.endDate : null,
+          salaryAmount: Number(revision.salaryAmount),
+          fixedPayInterval: revision.fixedPayInterval ?? 'monthly',
+          has13thSalary: Boolean(revision.has13thSalary),
+          has14thSalary: Boolean(revision.has14thSalary),
+        }))
+        .filter((revision) => Number.isFinite(revision.salaryAmount) && revision.salaryAmount > 0)
+        .sort((left, right) => compareDateStrings(left.startDate, right.startDate))
+    : []
+  if (revisions.length > 0) {
+    return revisions
+  }
+  const salaryAmount = Number(job.salaryAmount)
+  if (!Number.isFinite(salaryAmount) || salaryAmount <= 0) {
+    return []
+  }
+  return [
+    {
+      startDate: isDateString(job.startDate) ? job.startDate : todayDateString(),
+      endDate: null,
+      salaryAmount,
+      fixedPayInterval: job.fixedPayInterval ?? 'monthly',
+      has13thSalary: Boolean(job.has13thSalary),
+      has14thSalary: Boolean(job.has14thSalary),
+    },
+  ]
+}
+
+function extractShiftTimeRange(notes: string): { startTime: string; endTime: string } | null {
+  const match = notes.match(/(\d{2}:\d{2})\s*-\s*(\d{2}:\d{2})/)
+  if (!match) {
+    return null
+  }
+  const startTime = match[1] ?? ''
+  const endTime = match[2] ?? ''
+  if (!startTime || !endTime) {
+    return null
+  }
+  return { startTime, endTime }
 }
 
 function profileInitials(name: string): string {
@@ -88,6 +162,7 @@ async function buildCroppedAvatarDataUrl(dataUrl: string, zoom: number, offsetX:
 export function SettingsPage(): JSX.Element {
   const {
     settings,
+    incomeEntries,
     setSettings,
     backgroundImageDataUrl,
     setBackgroundImageFromFile,
@@ -107,6 +182,7 @@ export function SettingsPage(): JSX.Element {
     updateProfileAvatar,
     deleteProfile,
     updateProfileProtection,
+    updateIncomeEntry,
   } = useAppContext()
   const [importMode, setImportMode] = useState<'replace' | 'merge'>('replace')
   const [importError, setImportError] = useState('')
@@ -131,14 +207,14 @@ export function SettingsPage(): JSX.Element {
   const [jobModalOpen, setJobModalOpen] = useState(false)
   const [jobModalMode, setJobModalMode] = useState<'create' | 'edit'>('create')
   const [editingJobId, setEditingJobId] = useState<string | null>(null)
+  const [jobChangeScopeModalOpen, setJobChangeScopeModalOpen] = useState(false)
   const [jobDraft, setJobDraft] = useState<JobDraftState>({
     name: '',
     employmentType: 'casual',
     hourlyRate: '18',
     salaryAmount: '3000',
     fixedPayInterval: 'monthly',
-    has13thSalary: false,
-    has14thSalary: false,
+    salaryPaymentsPerYear: '12',
     startDate: todayDateString(),
   })
   const [jobModalError, setJobModalError] = useState('')
@@ -153,9 +229,11 @@ export function SettingsPage(): JSX.Element {
   const closeImportSuccess = useCallback(() => setImportSuccessMessage(''), [])
   const closeJobModal = useCallback(() => {
     setJobModalOpen(false)
+    setJobChangeScopeModalOpen(false)
     setJobModalError('')
     setEditingJobId(null)
   }, [])
+  const closeJobChangeScopeModal = useCallback(() => setJobChangeScopeModalOpen(false), [])
   const closeAvatarEditor = useCallback(() => {
     setAvatarEditorOpen(false)
     setAvatarEditorError('')
@@ -166,6 +244,7 @@ export function SettingsPage(): JSX.Element {
   const clearAllDataBackdropCloseGuard = useGuardedBackdropClose(closeClearAllDataConfirm)
   const importSuccessBackdropCloseGuard = useGuardedBackdropClose(closeImportSuccess)
   const jobModalBackdropCloseGuard = useGuardedBackdropClose(closeJobModal)
+  const jobChangeScopeBackdropCloseGuard = useGuardedBackdropClose(closeJobChangeScopeModal)
   const avatarEditorBackdropCloseGuard = useGuardedBackdropClose(closeAvatarEditor)
 
   async function exportJson(): Promise<void> {
@@ -200,14 +279,14 @@ export function SettingsPage(): JSX.Element {
   function openCreateJobModal(): void {
     setJobModalMode('create')
     setEditingJobId(null)
+    setJobChangeScopeModalOpen(false)
     setJobDraft({
       name: t('Neuer Job', 'New job'),
       employmentType: 'casual',
       hourlyRate: '18',
       salaryAmount: '3000',
       fixedPayInterval: 'monthly',
-      has13thSalary: false,
-      has14thSalary: false,
+      salaryPaymentsPerYear: '12',
       startDate: todayDateString(),
     })
     setJobModalError('')
@@ -217,26 +296,36 @@ export function SettingsPage(): JSX.Element {
   function openEditJobModal(job: ShiftJobConfig): void {
     setJobModalMode('edit')
     setEditingJobId(job.id)
+    setJobChangeScopeModalOpen(false)
+    const latestFixedRevision = job.employmentType === 'fixed' ? resolveFixedSalaryRevisions(job).at(-1) ?? null : null
     setJobDraft({
       name: job.name,
       employmentType: job.employmentType,
       hourlyRate: String(job.hourlyRate ?? 18),
-      salaryAmount: String(job.salaryAmount ?? 3000),
-      fixedPayInterval: job.fixedPayInterval ?? 'monthly',
-      has13thSalary: Boolean(job.has13thSalary),
-      has14thSalary: Boolean(job.has14thSalary),
-      startDate: job.startDate ?? todayDateString(),
+      salaryAmount: String(latestFixedRevision?.salaryAmount ?? job.salaryAmount ?? 3000),
+      fixedPayInterval: latestFixedRevision?.fixedPayInterval ?? job.fixedPayInterval ?? 'monthly',
+      salaryPaymentsPerYear: flagsToSalaryPayments(
+        Boolean(latestFixedRevision?.has13thSalary ?? job.has13thSalary),
+        Boolean(latestFixedRevision?.has14thSalary ?? job.has14thSalary),
+      ),
+      // For edits, this acts as effective date for fixed salary changes.
+      startDate: todayDateString(),
     })
     setJobModalError('')
     setJobModalOpen(true)
   }
 
-  function saveJobFromModal(): void {
+  async function saveJobFromModal(fixedChangeScope: FixedJobChangeScope | null = null): Promise<void> {
     const normalizedName = jobDraft.name.trim()
     if (!normalizedName) {
       setJobModalError(t('Bitte gib einen Jobnamen ein.', 'Please enter a job name.'))
       return
     }
+
+    const existingJob = jobModalMode === 'edit' && editingJobId ? settings.shiftJobs.find((job) => job.id === editingJobId) ?? null : null
+    const effectiveFromDate = isDateString(jobDraft.startDate) ? jobDraft.startDate : todayDateString()
+    let shouldApplyCasualShiftUpdate = false
+    let casualHourlyRateChanged = false
 
     let nextJob: ShiftJobConfig
     if (jobDraft.employmentType === 'casual') {
@@ -244,6 +333,17 @@ export function SettingsPage(): JSX.Element {
       if (!Number.isFinite(hourlyRate) || hourlyRate <= 0) {
         setJobModalError(t('Bitte gib einen gültigen Stundensatz ein.', 'Please enter a valid hourly rate.'))
         return
+      }
+      if (existingJob?.employmentType === 'casual') {
+        const existingHourlyRate = Number(existingJob.hourlyRate ?? 18)
+        const casualConfigChanged = existingJob.name !== normalizedName || existingHourlyRate !== hourlyRate
+        if (casualConfigChanged && fixedChangeScope === null) {
+          setJobModalError('')
+          setJobChangeScopeModalOpen(true)
+          return
+        }
+        shouldApplyCasualShiftUpdate = casualConfigChanged
+        casualHourlyRateChanged = existingHourlyRate !== hourlyRate
       }
       nextJob = {
         id: editingJobId ?? makeJobId(),
@@ -257,15 +357,80 @@ export function SettingsPage(): JSX.Element {
         setJobModalError(t('Bitte gib ein gültiges Gehalt ein.', 'Please enter a valid salary amount.'))
         return
       }
+      const salaryFlags = salaryPaymentsToFlags(jobDraft.salaryPaymentsPerYear)
+      const newFixedRevision = {
+        startDate: effectiveFromDate,
+        endDate: null as string | null,
+        salaryAmount,
+        fixedPayInterval: jobDraft.fixedPayInterval,
+        has13thSalary: salaryFlags.has13thSalary,
+        has14thSalary: salaryFlags.has14thSalary,
+      }
+      let nextRevisions: NonNullable<ShiftJobConfig['fixedSalaryRevisions']> = [newFixedRevision]
+      if (existingJob?.employmentType === 'fixed') {
+        const currentRevisions = resolveFixedSalaryRevisions(existingJob)
+        const latestRevision = currentRevisions.at(-1) ?? null
+        if (latestRevision) {
+          const fixedConfigChanged =
+            latestRevision.salaryAmount !== salaryAmount ||
+            latestRevision.fixedPayInterval !== jobDraft.fixedPayInterval ||
+            latestRevision.has13thSalary !== salaryFlags.has13thSalary ||
+            latestRevision.has14thSalary !== salaryFlags.has14thSalary
+          if (!fixedConfigChanged) {
+            nextRevisions = currentRevisions
+          } else {
+            if (fixedChangeScope === null) {
+              setJobModalError('')
+              setJobChangeScopeModalOpen(true)
+              return
+            }
+            if (fixedChangeScope === 'retroactive') {
+              const unchangedHistory = currentRevisions.slice(0, -1)
+              nextRevisions = [
+                ...unchangedHistory,
+                {
+                  ...latestRevision,
+                  salaryAmount,
+                  fixedPayInterval: jobDraft.fixedPayInterval,
+                  has13thSalary: salaryFlags.has13thSalary,
+                  has14thSalary: salaryFlags.has14thSalary,
+                },
+              ]
+            } else {
+              if (compareDateStrings(effectiveFromDate, latestRevision.startDate) <= 0) {
+                setJobModalError(
+                  t(
+                    'Für "Ab Datum" muss das Datum nach dem letzten Änderungsdatum liegen. Sonst bitte "Rückwirkend" wählen.',
+                    'For "From date", the date must be after the last change date. Otherwise use "Retroactive".',
+                  ),
+                )
+                return
+              }
+              const unchangedHistory = currentRevisions.slice(0, -1)
+              const previousRevision = {
+                ...latestRevision,
+                endDate: addDays(effectiveFromDate, -1),
+              }
+              nextRevisions = [
+                ...unchangedHistory,
+                previousRevision,
+                newFixedRevision,
+              ]
+            }
+          }
+        }
+      }
+      const latestNextRevision = nextRevisions.at(-1) ?? newFixedRevision
       nextJob = {
         id: editingJobId ?? makeJobId(),
         name: normalizedName,
         employmentType: 'fixed',
-        salaryAmount,
-        fixedPayInterval: jobDraft.fixedPayInterval,
-        has13thSalary: jobDraft.has13thSalary,
-        has14thSalary: jobDraft.has14thSalary,
-        startDate: jobDraft.startDate || todayDateString(),
+        salaryAmount: latestNextRevision.salaryAmount,
+        fixedPayInterval: latestNextRevision.fixedPayInterval,
+        has13thSalary: latestNextRevision.has13thSalary,
+        has14thSalary: latestNextRevision.has14thSalary,
+        startDate: latestNextRevision.startDate,
+        fixedSalaryRevisions: nextRevisions,
       }
     }
 
@@ -273,7 +438,59 @@ export function SettingsPage(): JSX.Element {
       jobModalMode === 'edit' && editingJobId
         ? settings.shiftJobs.map((job) => (job.id === editingJobId ? nextJob : job))
         : [...settings.shiftJobs, nextJob]
+    if (shouldApplyCasualShiftUpdate && existingJob?.employmentType === 'casual' && nextJob.employmentType === 'casual') {
+      try {
+        const oldName = existingJob.name.trim()
+        const oldNameLower = oldName.toLowerCase()
+        const nextHourlyRate = Number(nextJob.hourlyRate ?? 18)
+        const shouldRename = oldName !== normalizedName
+        const shouldApplyFromDate = fixedChangeScope === 'from-date'
+        const entriesToUpdate = incomeEntries.filter((entry) => {
+          const tagsLower = entry.tags.map((tag) => tag.trim().toLowerCase())
+          const isShiftEntry = tagsLower.includes('dienst') || tagsLower.includes('shift')
+          const belongsToJob = entry.source.trim() === oldName || tagsLower.includes(oldNameLower)
+          if (!isShiftEntry || !belongsToJob) {
+            return false
+          }
+          if (shouldApplyFromDate && compareDateStrings(entry.date, effectiveFromDate) < 0) {
+            return false
+          }
+          return true
+        })
+        for (const entry of entriesToUpdate) {
+          const nextPayload: Partial<IncomeEntry> = {}
+          if (shouldRename) {
+            nextPayload.source = normalizedName
+            nextPayload.tags = entry.tags.map((tag) => (tag.trim().toLowerCase() === oldNameLower ? normalizedName : tag))
+          }
+          if (casualHourlyRateChanged) {
+            const range = extractShiftTimeRange(entry.notes)
+            if (range) {
+              try {
+                const recalculated = calculateShiftIncome({
+                  date: entry.date,
+                  startTime: range.startTime,
+                  endTime: range.endTime,
+                  hourlyRate: nextHourlyRate,
+                  language: settings.language,
+                })
+                nextPayload.amount = recalculated.amount
+              } catch {
+                // Keep existing amount when parsing fails.
+              }
+            }
+          }
+          if (Object.keys(nextPayload).length > 0) {
+            await updateIncomeEntry(entry.id, nextPayload)
+          }
+        }
+      } catch (error) {
+        setJobModalError(error instanceof Error ? error.message : t('Job konnte nicht gespeichert werden.', 'Job could not be saved.'))
+        return
+      }
+    }
     updateShiftJobs(nextJobs, settings.defaultShiftJobId)
+    setJobChangeScopeModalOpen(false)
     closeJobModal()
   }
 
@@ -807,14 +1024,6 @@ export function SettingsPage(): JSX.Element {
             </header>
             <div className="setting-list">
               <label>
-                {t('Jobname', 'Job name')}
-                <input
-                  value={jobDraft.name}
-                  onChange={(event) => setJobDraft((current) => ({ ...current, name: event.target.value }))}
-                  placeholder={t('z. B. Marketing', 'e.g. Marketing')}
-                />
-              </label>
-              <label>
                 {t('Anstellung', 'Employment')}
                 <select
                   value={jobDraft.employmentType}
@@ -829,9 +1038,17 @@ export function SettingsPage(): JSX.Element {
                   <option value="fixed">{t('Fixanstellung', 'Fixed employment')}</option>
                 </select>
               </label>
+              <label>
+                {t('Jobname', 'Job name')}
+                <input
+                  value={jobDraft.name}
+                  onChange={(event) => setJobDraft((current) => ({ ...current, name: event.target.value }))}
+                  placeholder={t('z. B. Marketing', 'e.g. Marketing')}
+                />
+              </label>
               {jobDraft.employmentType === 'casual' ? (
                 <label>
-                  {`${t('Stundensatz', 'Hourly rate')} (${currencySymbol}/h)`}
+                  {`${t('Stundensatz (netto)', 'Hourly rate (net)')} (${currencySymbol}/h)`}
                   <input
                     type="number"
                     min={0.01}
@@ -843,7 +1060,7 @@ export function SettingsPage(): JSX.Element {
               ) : (
                 <>
                   <label>
-                    {`${t('Gehalt pro Auszahlung', 'Salary per payout')} (${currencySymbol})`}
+                    {`${t('Gehalt pro Auszahlung (netto)', 'Salary per payout (net)')} (${currencySymbol})`}
                     <input
                       type="number"
                       min={0.01}
@@ -864,38 +1081,84 @@ export function SettingsPage(): JSX.Element {
                     </select>
                   </label>
                   <label>
-                    {t('Startdatum', 'Start date')}
+                    {jobModalMode === 'edit' ? t('Änderung wirksam ab', 'Change effective from') : t('Startdatum', 'Start date')}
                     <input
                       type="date"
                       value={jobDraft.startDate}
                       onChange={(event) => setJobDraft((current) => ({ ...current, startDate: event.target.value }))}
                     />
                   </label>
-                  <label className="switch">
-                    <input
-                      type="checkbox"
-                      checked={jobDraft.has13thSalary}
-                      onChange={(event) => setJobDraft((current) => ({ ...current, has13thSalary: event.target.checked }))}
-                    />
-                    <span>{t('13. Gehalt berücksichtigen', 'Include 13th salary')}</span>
-                  </label>
-                  <label className="switch">
-                    <input
-                      type="checkbox"
-                      checked={jobDraft.has14thSalary}
-                      onChange={(event) => setJobDraft((current) => ({ ...current, has14thSalary: event.target.checked }))}
-                    />
-                    <span>{t('14. Gehalt berücksichtigen', 'Include 14th salary')}</span>
+                  <label>
+                    {t('Gehälter pro Jahr', 'Salary payouts per year')}
+                    <select
+                      value={jobDraft.salaryPaymentsPerYear}
+                      onChange={(event) =>
+                        setJobDraft((current) => ({
+                          ...current,
+                          salaryPaymentsPerYear: event.target.value as JobDraftState['salaryPaymentsPerYear'],
+                        }))
+                      }
+                    >
+                      <option value="12">12</option>
+                      <option value="13">13</option>
+                      <option value="14">14</option>
+                    </select>
                   </label>
                 </>
               )}
               {jobModalError ? <p className="error-text">{jobModalError}</p> : null}
             </div>
             <div className="form-actions">
-              <button type="button" className="button button-primary" onClick={saveJobFromModal}>
+              <button type="button" className="button button-primary" onClick={() => void saveJobFromModal()}>
                 {jobModalMode === 'create' ? t('Job speichern', 'Save job') : t('Änderungen speichern', 'Save changes')}
               </button>
               <button type="button" className="button button-secondary" onClick={closeJobModal}>
+                {t('Abbrechen', 'Cancel')}
+              </button>
+            </div>
+          </article>
+        </div>
+      ) : null}
+
+      {jobChangeScopeModalOpen ? (
+        <div
+          className="form-modal-backdrop"
+          onMouseDown={jobChangeScopeBackdropCloseGuard.onBackdropMouseDown}
+          onClick={jobChangeScopeBackdropCloseGuard.onBackdropClick}
+          role="presentation"
+        >
+          <article className="card form-modal confirm-modal" onMouseDownCapture={jobChangeScopeBackdropCloseGuard.onModalMouseDownCapture} onClick={(event) => event.stopPropagation()}>
+            <header className="section-header">
+              <h2>{t('Änderung anwenden', 'Apply change')}</h2>
+              <button type="button" className="icon-button" onClick={closeJobChangeScopeModal} aria-label={t('Popup schließen', 'Close popup')}>
+                ×
+              </button>
+            </header>
+            <div className="setting-list">
+              <p className="muted">
+                {t(
+                  'Soll die Änderung rückwirkend gelten oder erst ab einem bestimmten Datum?',
+                  'Should this change apply retroactively or only from a specific date?',
+                )}
+              </p>
+              <label>
+                {t('Ab Datum', 'From date')}
+                <input
+                  type="date"
+                  value={jobDraft.startDate}
+                  onChange={(event) => setJobDraft((current) => ({ ...current, startDate: event.target.value }))}
+                />
+              </label>
+              {jobModalError ? <p className="error-text">{jobModalError}</p> : null}
+            </div>
+            <div className="form-actions">
+              <button type="button" className="button button-primary" onClick={() => void saveJobFromModal('retroactive')}>
+                {t('Rückwirkend', 'Retroactive')}
+              </button>
+              <button type="button" className="button button-secondary" onClick={() => void saveJobFromModal('from-date')}>
+                {t('Ab Datum übernehmen', 'Apply from date')}
+              </button>
+              <button type="button" className="button button-secondary" onClick={closeJobChangeScopeModal}>
                 {t('Abbrechen', 'Cancel')}
               </button>
             </div>

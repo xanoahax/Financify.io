@@ -1,4 +1,4 @@
-import type { IncomeEntry, ShiftJobConfig } from '../types/models'
+import type { FixedSalaryRevision, IncomeEntry, ShiftJobConfig } from '../types/models'
 import { addDays, addMonths, compareDateStrings, differenceInDays, monthKey } from './date'
 import { median } from './format'
 
@@ -183,62 +183,102 @@ function firstAnnualBonusDate(startDate: string, month: number): string {
 }
 
 export function buildFixedSalaryIncomeTemplateEntries(jobs: ShiftJobConfig[]): IncomeEntry[] {
+  function normalizeFixedSalaryRevisions(job: ShiftJobConfig): FixedSalaryRevision[] {
+    const fromHistory = Array.isArray(job.fixedSalaryRevisions)
+      ? job.fixedSalaryRevisions
+          .filter((revision) => Number.isFinite(Number(revision.salaryAmount)) && Number(revision.salaryAmount) > 0)
+          .filter((revision) => /^\d{4}-\d{2}-\d{2}$/.test(revision.startDate))
+          .map((revision) => ({
+            startDate: revision.startDate,
+            endDate: revision.endDate ?? null,
+            salaryAmount: Number(revision.salaryAmount),
+            fixedPayInterval: revision.fixedPayInterval ?? 'monthly',
+            has13thSalary: Boolean(revision.has13thSalary),
+            has14thSalary: Boolean(revision.has14thSalary),
+          }))
+          .sort((left, right) => compareDateStrings(left.startDate, right.startDate))
+      : []
+    if (fromHistory.length > 0) {
+      return fromHistory
+    }
+
+    const salaryAmount = Number(job.salaryAmount)
+    if (!Number.isFinite(salaryAmount) || salaryAmount <= 0) {
+      return []
+    }
+    const startDate = typeof job.startDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(job.startDate) ? job.startDate : todayDateString()
+    return [
+      {
+        startDate,
+        endDate: null,
+        salaryAmount,
+        fixedPayInterval: job.fixedPayInterval ?? 'monthly',
+        has13thSalary: Boolean(job.has13thSalary),
+        has14thSalary: Boolean(job.has14thSalary),
+      },
+    ]
+  }
+
   const generated: IncomeEntry[] = []
   for (const job of jobs) {
     if (job.employmentType !== 'fixed') {
       continue
     }
-    const salaryAmount = Number(job.salaryAmount)
-    if (!Number.isFinite(salaryAmount) || salaryAmount <= 0) {
-      continue
-    }
-    const startDate = typeof job.startDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(job.startDate) ? job.startDate : todayDateString()
-    const payInterval = job.fixedPayInterval ?? 'monthly'
-    const baseRecurring: IncomeEntry['recurring'] = payInterval === 'monthly' ? 'monthly' : payInterval === 'weekly' ? 'weekly' : 'custom'
-    const baseInterval = payInterval === 'biweekly' ? 14 : undefined
-    generated.push({
-      id: `job-fixed-${job.id}-base`,
-      amount: salaryAmount,
-      date: startDate,
-      source: job.name,
-      tags: ['job', 'fixed-salary', job.name],
-      notes: 'Auto-generated fixed salary income.',
-      recurring: baseRecurring,
-      recurringIntervalDays: baseInterval,
-      createdAt: toDateStamp(startDate),
-      updatedAt: toDateStamp(startDate),
-    })
-
-    if (job.has13thSalary) {
-      const bonusDate = firstAnnualBonusDate(startDate, 6)
+    const revisions = normalizeFixedSalaryRevisions(job)
+    for (let revisionIndex = 0; revisionIndex < revisions.length; revisionIndex += 1) {
+      const revision = revisions[revisionIndex]
+      const startDate = revision.startDate
+      const salaryAmount = revision.salaryAmount
+      const payInterval = revision.fixedPayInterval ?? 'monthly'
+      const baseRecurring: IncomeEntry['recurring'] = payInterval === 'monthly' ? 'monthly' : payInterval === 'weekly' ? 'weekly' : 'custom'
+      const baseInterval = payInterval === 'biweekly' ? 14 : undefined
       generated.push({
-        id: `job-fixed-${job.id}-13`,
+        id: `job-fixed-${job.id}-base-${revisionIndex}`,
         amount: salaryAmount,
-        date: bonusDate,
+        date: startDate,
+        endDate: revision.endDate ?? undefined,
         source: job.name,
-        tags: ['job', 'fixed-salary', '13th-salary', job.name],
-        notes: 'Auto-generated 13th salary.',
-        recurring: 'custom',
-        recurringIntervalDays: 365,
-        createdAt: toDateStamp(bonusDate),
-        updatedAt: toDateStamp(bonusDate),
+        tags: ['job', 'fixed-salary', job.name],
+        notes: 'Auto-generated fixed salary income.',
+        recurring: baseRecurring,
+        recurringIntervalDays: baseInterval,
+        createdAt: toDateStamp(startDate),
+        updatedAt: toDateStamp(startDate),
       })
-    }
 
-    if (job.has14thSalary) {
-      const bonusDate = firstAnnualBonusDate(startDate, 11)
-      generated.push({
-        id: `job-fixed-${job.id}-14`,
-        amount: salaryAmount,
-        date: bonusDate,
-        source: job.name,
-        tags: ['job', 'fixed-salary', '14th-salary', job.name],
-        notes: 'Auto-generated 14th salary.',
-        recurring: 'custom',
-        recurringIntervalDays: 365,
-        createdAt: toDateStamp(bonusDate),
-        updatedAt: toDateStamp(bonusDate),
-      })
+      if (revision.has13thSalary) {
+        const bonusDate = firstAnnualBonusDate(startDate, 6)
+        generated.push({
+          id: `job-fixed-${job.id}-13-${revisionIndex}`,
+          amount: salaryAmount,
+          date: bonusDate,
+          endDate: revision.endDate ?? undefined,
+          source: job.name,
+          tags: ['job', 'fixed-salary', '13th-salary', job.name],
+          notes: 'Auto-generated 13th salary.',
+          recurring: 'custom',
+          recurringIntervalDays: 365,
+          createdAt: toDateStamp(bonusDate),
+          updatedAt: toDateStamp(bonusDate),
+        })
+      }
+
+      if (revision.has14thSalary) {
+        const bonusDate = firstAnnualBonusDate(startDate, 11)
+        generated.push({
+          id: `job-fixed-${job.id}-14-${revisionIndex}`,
+          amount: salaryAmount,
+          date: bonusDate,
+          endDate: revision.endDate ?? undefined,
+          source: job.name,
+          tags: ['job', 'fixed-salary', '14th-salary', job.name],
+          notes: 'Auto-generated 14th salary.',
+          recurring: 'custom',
+          recurringIntervalDays: 365,
+          createdAt: toDateStamp(bonusDate),
+          updatedAt: toDateStamp(bonusDate),
+        })
+      }
     }
   }
   return generated

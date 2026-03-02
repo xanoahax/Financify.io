@@ -3,6 +3,19 @@
 All notable changes for desktop releases are documented here.  
 Each release must have a matching section (`## vX.Y.Z`) so GitHub release notes and the in-app update dialog stay in sync.
 
+## v0.10.1
+- Added an explicit **Apply change** confirmation step for edits that impact history, with the choice between:
+  - **Retroactive**
+  - **Apply from date**
+- Extended this history-scope flow across:
+  - recurring income edits
+  - subscription cost-impact edits
+  - job edits (fixed and casual)
+- Improved casual job edits so logged shift entries can be updated consistently (name/rate) with the selected scope.
+- Hardened effective-date validation to prevent silent fallback when a selected **from date** cannot be applied.
+- Improved household selection stability and removed a render-loop-prone effect.
+- Fixed currency label rendering in settings (`EUR (€)`).
+
 ## v0.10.0
 - Added a new **Household** tab for managing shared living costs in one place.
 - Added household setup with residents and recurring household cost entries.

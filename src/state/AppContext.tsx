@@ -580,6 +580,16 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
               has13thSalary: Boolean(payload.jobHas13thSalary),
               has14thSalary: Boolean(payload.jobHas14thSalary),
               startDate: payload.jobStartDate || nowIso().slice(0, 10),
+              fixedSalaryRevisions: [
+                {
+                  startDate: payload.jobStartDate || nowIso().slice(0, 10),
+                  endDate: null,
+                  salaryAmount: normalizedSalary,
+                  fixedPayInterval: payload.jobFixedPayInterval ?? 'monthly',
+                  has13thSalary: Boolean(payload.jobHas13thSalary),
+                  has14thSalary: Boolean(payload.jobHas14thSalary),
+                },
+              ],
             },
           ]
         }
@@ -830,6 +840,17 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
         compareDateStrings(effectiveFrom as string, existing.startDate) > 0 &&
         (!existing.endDate || compareDateStrings(effectiveFrom as string, existing.endDate) <= 0)
 
+      const requestedSplit = Boolean(effectiveFrom) && hasCostImpactChange
+      if (requestedSplit && !canSplitHistory) {
+        throw new Error(
+          tx(
+            settings.language,
+            'Ab Datum konnte nicht angewendet werden. Bitte ein Datum nach dem Startdatum und innerhalb des aktiven Zeitraums wählen.',
+            'From date could not be applied. Please choose a date after the start date and within the active period.',
+          ),
+        )
+      }
+
       if (canSplitHistory) {
         const effective = effectiveFrom as string
         const previousSegment: Subscription = {
@@ -943,6 +964,17 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
         existing.recurring !== 'none' &&
         compareDateStrings(effectiveFrom as string, existing.date) > 0 &&
         (!existing.endDate || compareDateStrings(effectiveFrom as string, existing.endDate) <= 0)
+
+      const requestedSplit = Boolean(effectiveFrom) && hasRecurringImpactChange
+      if (requestedSplit && !canSplitHistory) {
+        throw new Error(
+          tx(
+            settings.language,
+            'Ab Datum konnte nicht angewendet werden. Bitte ein Datum nach dem Startdatum und innerhalb des aktiven Zeitraums wählen.',
+            'From date could not be applied. Please choose a date after the start date and within the active period.',
+          ),
+        )
+      }
 
       if (canSplitHistory) {
         const effective = effectiveFrom as string

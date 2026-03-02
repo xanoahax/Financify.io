@@ -83,6 +83,57 @@ function normalizeImportedShiftJobs(raw: unknown): ShiftJobConfig[] {
   function isDateString(value: unknown): value is string {
     return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
   }
+  function normalizeFixedSalaryRevisions(
+    value: unknown,
+    fallback: Pick<ShiftJobConfig, 'salaryAmount' | 'fixedPayInterval' | 'has13thSalary' | 'has14thSalary' | 'startDate'>,
+  ): NonNullable<ShiftJobConfig['fixedSalaryRevisions']> {
+    const rows = Array.isArray(value) ? value : []
+    const parsed = rows
+      .map((row) => {
+        if (!row || typeof row !== 'object') {
+          return null
+        }
+        const source = row as {
+          startDate?: unknown
+          endDate?: unknown
+          salaryAmount?: unknown
+          fixedPayInterval?: unknown
+          has13thSalary?: unknown
+          has14thSalary?: unknown
+        }
+        const salaryAmount = Number(source.salaryAmount)
+        if (!Number.isFinite(salaryAmount) || salaryAmount <= 0 || !isDateString(source.startDate)) {
+          return null
+        }
+        return {
+          startDate: source.startDate,
+          endDate: isDateString(source.endDate) ? source.endDate : null,
+          salaryAmount,
+          fixedPayInterval: normalizeFixedPayInterval(source.fixedPayInterval),
+          has13thSalary: Boolean(source.has13thSalary),
+          has14thSalary: Boolean(source.has14thSalary),
+        }
+      })
+      .filter((row): row is NonNullable<typeof row> => Boolean(row))
+      .sort((left, right) => left.startDate.localeCompare(right.startDate))
+    if (parsed.length > 0) {
+      return parsed
+    }
+    const fallbackSalary = Number(fallback.salaryAmount)
+    if (!Number.isFinite(fallbackSalary) || fallbackSalary <= 0) {
+      return []
+    }
+    return [
+      {
+        startDate: isDateString(fallback.startDate) ? fallback.startDate : todayDate,
+        endDate: null,
+        salaryAmount: fallbackSalary,
+        fixedPayInterval: normalizeFixedPayInterval(fallback.fixedPayInterval),
+        has13thSalary: Boolean(fallback.has13thSalary),
+        has14thSalary: Boolean(fallback.has14thSalary),
+      },
+    ]
+  }
   const todayDate = new Date().toISOString().slice(0, 10)
   return raw.reduce<ShiftJobConfig[]>((acc, row) => {
       if (!row || typeof row !== 'object') {
@@ -98,6 +149,7 @@ function normalizeImportedShiftJobs(raw: unknown): ShiftJobConfig[] {
         has13thSalary?: unknown
         has14thSalary?: unknown
         startDate?: unknown
+        fixedSalaryRevisions?: unknown
       }
       const name = typeof job.name === 'string' ? job.name.trim() : ''
       if (!name) {
@@ -106,19 +158,27 @@ function normalizeImportedShiftJobs(raw: unknown): ShiftJobConfig[] {
       const employmentType = normalizeEmploymentType(job.employmentType)
       const id = typeof job.id === 'string' && job.id.trim() ? job.id : makeId()
       if (employmentType === 'fixed') {
-        const salaryAmount = Number(job.salaryAmount)
-        if (!Number.isFinite(salaryAmount) || salaryAmount <= 0) {
-          return acc
-        }
-        acc.push({
-          id,
-          name,
-          employmentType: 'fixed' as const,
-          salaryAmount,
+        const revisions = normalizeFixedSalaryRevisions(job.fixedSalaryRevisions, {
+          salaryAmount: Number(job.salaryAmount),
           fixedPayInterval: normalizeFixedPayInterval(job.fixedPayInterval),
           has13thSalary: Boolean(job.has13thSalary),
           has14thSalary: Boolean(job.has14thSalary),
           startDate: isDateString(job.startDate) ? job.startDate : todayDate,
+        })
+        if (revisions.length === 0) {
+          return acc
+        }
+        const latestRevision = revisions[revisions.length - 1]
+        acc.push({
+          id,
+          name,
+          employmentType: 'fixed' as const,
+          salaryAmount: latestRevision.salaryAmount,
+          fixedPayInterval: latestRevision.fixedPayInterval,
+          has13thSalary: latestRevision.has13thSalary,
+          has14thSalary: latestRevision.has14thSalary,
+          startDate: latestRevision.startDate,
+          fixedSalaryRevisions: revisions,
         })
         return acc
       }

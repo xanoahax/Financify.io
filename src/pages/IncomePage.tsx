@@ -28,6 +28,13 @@ interface IncomeDeleteConfirmState {
   date: string
 }
 
+type ChangeScope = 'retroactive' | 'from-date'
+
+interface PendingIncomeUpdateState {
+  id: string
+  payload: IncomeFormState
+}
+
 const INCOME_SOURCE_PRESETS = {
   de: [
     'Gehalt',
@@ -72,6 +79,11 @@ function parseTags(input: string): string[] {
 
 function parseOptionalNumberInput(value: string): number {
   return value.trim() === '' ? Number.NaN : Number(value)
+}
+
+function persistedIncomeEntryId(entryId: string): string {
+  const separatorIndex = entryId.indexOf('::')
+  return separatorIndex >= 0 ? entryId.slice(0, separatorIndex) : entryId
 }
 
 function isJobShiftIncomeEntry(entry: IncomeEntry): boolean {
@@ -132,9 +144,12 @@ export function IncomePage(): JSX.Element {
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [tagInput, setTagInput] = useState('')
   const [viewMode, setViewMode] = useState<'month' | 'year'>('month')
+  const [selectedMonth, setSelectedMonth] = useState(() => monthKey(todayString()))
+  const [selectedYear, setSelectedYear] = useState(() => todayString().slice(0, 4))
   const [sourceFilter, setSourceFilter] = useState('all')
   const [formError, setFormError] = useState('')
   const [confirmDelete, setConfirmDelete] = useState<IncomeDeleteConfirmState | null>(null)
+  const [pendingIncomeUpdate, setPendingIncomeUpdate] = useState<PendingIncomeUpdateState | null>(null)
   const amountInputRef = useRef<HTMLInputElement | null>(null)
   const dateInputRef = useRef<HTMLInputElement | null>(null)
   const shiftDateInputRef = useRef<HTMLInputElement | null>(null)
@@ -186,10 +201,13 @@ export function IncomePage(): JSX.Element {
     setShiftForm(buildDefaultShiftForm(resolvedDefaultShiftJobId))
     setTagInput('')
     setFormError('')
+    setPendingIncomeUpdate(null)
   }, [resolvedDefaultShiftJobId, settings.language])
   const closeConfirmDelete = useCallback(() => setConfirmDelete(null), [])
+  const closePendingIncomeUpdate = useCallback(() => setPendingIncomeUpdate(null), [])
   const formBackdropCloseGuard = useGuardedBackdropClose(closeForm)
   const confirmBackdropCloseGuard = useGuardedBackdropClose(closeConfirmDelete)
+  const pendingIncomeUpdateBackdropCloseGuard = useGuardedBackdropClose(closePendingIncomeUpdate)
 
   useEffect(() => {
     if (searchParams.get('quickAdd') !== '1') {
@@ -220,6 +238,10 @@ export function IncomePage(): JSX.Element {
       if (event.key !== 'Escape') {
         return
       }
+      if (pendingIncomeUpdate) {
+        setPendingIncomeUpdate(null)
+        return
+      }
       if (confirmDelete) {
         setConfirmDelete(null)
         return
@@ -228,15 +250,60 @@ export function IncomePage(): JSX.Element {
     }
     window.addEventListener('keydown', onEscape)
     return () => window.removeEventListener('keydown', onEscape)
-  }, [confirmDelete, isFormOpen, closeForm])
+  }, [closeForm, confirmDelete, isFormOpen, pendingIncomeUpdate])
+
+  const hasRecurringImpactChange = useCallback((existing: IncomeEntry, payload: IncomeFormState): boolean => {
+    return (
+      payload.amount !== existing.amount ||
+      payload.source !== existing.source ||
+      payload.recurring !== existing.recurring ||
+      (payload.recurringIntervalDays ?? undefined) !== (existing.recurringIntervalDays ?? undefined)
+    )
+  }, [])
 
   const today = todayString()
-  const currentMonth = monthKey(today)
-  const currentYear = today.slice(0, 4)
+  const selectedMonthDate = `${selectedMonth}-01`
+  const currentYearNumber = Number(today.slice(0, 4))
+  const effectiveSelectedYear = selectedYear
+  const selectedYearStartDate = `${effectiveSelectedYear}-01-01`
+  const selectedYearEndDate = endOfYear(selectedYearStartDate)
+  const isSelectedYearCurrent = effectiveSelectedYear === String(currentYearNumber)
   const sources = useMemo(
     () => [...new Set(analyticEntries.map((item) => incomeSourceLabel(item, settings.language)))],
     [analyticEntries, settings.language],
   )
+  const selectableYears = useMemo(() => {
+    const years = new Set<number>()
+    for (const entry of analyticEntries) {
+      const startYear = Number(entry.date.slice(0, 4))
+      if (!Number.isFinite(startYear)) {
+        continue
+      }
+      if (entry.recurring === 'none') {
+        if (startYear <= currentYearNumber) {
+          years.add(startYear)
+        }
+        continue
+      }
+      const rawEndYear = entry.endDate ? Number(entry.endDate.slice(0, 4)) : currentYearNumber
+      const boundedEndYear = Number.isFinite(rawEndYear) ? Math.min(rawEndYear, currentYearNumber) : currentYearNumber
+      for (let year = startYear; year <= boundedEndYear; year += 1) {
+        if (year <= currentYearNumber) {
+          years.add(year)
+        }
+      }
+    }
+    return [...years].sort((a, b) => b - a).map((year) => String(year))
+  }, [analyticEntries, currentYearNumber])
+
+  useEffect(() => {
+    if (selectableYears.length === 0) {
+      return
+    }
+    if (!selectableYears.includes(selectedYear)) {
+      setSelectedYear(selectableYears[0])
+    }
+  }, [selectableYears, selectedYear])
 
   const sourceAndQueryFiltered = useMemo(() => {
     const query = uiState.globalSearch.trim().toLowerCase()
@@ -258,9 +325,9 @@ export function IncomePage(): JSX.Element {
   const periodRange = useMemo(
     () =>
       viewMode === 'month'
-        ? { start: startOfMonth(today), end: endOfMonth(today) }
-        : { start: startOfYear(today), end: endOfYear(today) },
-    [today, viewMode],
+        ? { start: startOfMonth(selectedMonthDate), end: endOfMonth(selectedMonthDate) }
+        : { start: startOfYear(selectedYearStartDate), end: endOfYear(selectedYearStartDate) },
+    [selectedMonthDate, selectedYearStartDate, viewMode],
   )
 
   const tableSourceAndQueryFiltered = useMemo(() => {
@@ -280,25 +347,36 @@ export function IncomePage(): JSX.Element {
       })
   }, [incomeEntries, settings.language, sourceFilter, uiState.globalSearch])
 
+  const tablePeriodRange = useMemo(
+    () =>
+      viewMode === 'month'
+        ? { start: startOfMonth(selectedMonthDate), end: endOfMonth(selectedMonthDate) }
+        : { start: startOfYear(selectedYearStartDate), end: endOfYear(selectedYearStartDate) },
+    [selectedMonthDate, selectedYearStartDate, viewMode],
+  )
+
   const tableEntries = useMemo(() => {
-    return tableSourceAndQueryFiltered
-      .filter((item) => (viewMode === 'month' ? monthKey(item.date) === currentMonth : item.date.startsWith(currentYear)))
-      .sort((a, b) => b.date.localeCompare(a.date))
-  }, [currentMonth, currentYear, tableSourceAndQueryFiltered, viewMode])
+    return materializeIncomeEntriesForRange(tableSourceAndQueryFiltered, tablePeriodRange.start, tablePeriodRange.end)
+  }, [tablePeriodRange.end, tablePeriodRange.start, tableSourceAndQueryFiltered])
 
   const resolvedPeriodEntries = useMemo(
     () => materializeIncomeEntriesForRange(sourceAndQueryFiltered, periodRange.start, periodRange.end),
     [periodRange.end, periodRange.start, sourceAndQueryFiltered],
   )
 
-  const yearToDateEntries = useMemo(
-    () => materializeIncomeEntriesForRange(sourceAndQueryFiltered, startOfYear(today), today),
-    [sourceAndQueryFiltered, today],
+  const selectedYearToDateEntries = useMemo(
+    () =>
+      materializeIncomeEntriesForRange(
+        sourceAndQueryFiltered,
+        startOfYear(selectedYearStartDate),
+        isSelectedYearCurrent ? today : selectedYearEndDate,
+      ),
+    [isSelectedYearCurrent, selectedYearEndDate, selectedYearStartDate, sourceAndQueryFiltered, today],
   )
 
-  const yearForecastEntries = useMemo(
-    () => materializeIncomeEntriesForRange(sourceAndQueryFiltered, startOfYear(today), endOfYear(today)),
-    [sourceAndQueryFiltered, today],
+  const selectedYearForecastEntries = useMemo(
+    () => materializeIncomeEntriesForRange(sourceAndQueryFiltered, startOfYear(selectedYearStartDate), selectedYearEndDate),
+    [selectedYearEndDate, selectedYearStartDate, sourceAndQueryFiltered],
   )
 
   const rollingYearEntries = useMemo(
@@ -308,16 +386,17 @@ export function IncomePage(): JSX.Element {
 
   const stats = useMemo(() => {
     const monthly = incomeByMonth(rollingYearEntries)
-    const totalEntries = viewMode === 'year' ? yearToDateEntries : resolvedPeriodEntries
+    const totalEntries = viewMode === 'year' && isSelectedYearCurrent ? selectedYearToDateEntries : resolvedPeriodEntries
     return {
       total: sumIncome(totalEntries),
-      yearForecastTotal: sumIncome(yearForecastEntries),
+      yearForecastTotal: sumIncome(selectedYearForecastEntries),
       monthSeries: monthly.map((item) => ({ label: monthLabel(item.month, monthLocale), value: item.value })).slice(-12),
       sourceSeries: sourceBreakdown(totalEntries, (entry) => incomeSourceLabel(entry, settings.language)),
       aggregates: monthStats(rollingYearEntries),
       mom: monthOverMonthChange(rollingYearEntries),
     }
-  }, [monthLocale, resolvedPeriodEntries, rollingYearEntries, settings.language, viewMode, yearForecastEntries, yearToDateEntries])
+  }, [isSelectedYearCurrent, monthLocale, resolvedPeriodEntries, rollingYearEntries, selectedYearForecastEntries, selectedYearToDateEntries, settings.language, viewMode])
+  const selectedMonthLabel = useMemo(() => monthLabel(selectedMonth, monthLocale), [monthLocale, selectedMonth])
 
   const shiftHourlyRate = useMemo(() => {
     const rate = Number(selectedShiftJob?.hourlyRate)
@@ -385,7 +464,16 @@ export function IncomePage(): JSX.Element {
         recurringIntervalDays: form.recurring === 'custom' ? Number(form.recurringIntervalDays) : undefined,
       }
       if (editId) {
-        await updateIncomeEntry(editId, payload, { effectiveFrom: payload.recurring !== 'none' ? effectiveFromDate : undefined })
+        const existing = incomeEntries.find((item) => item.id === editId)
+        if (!existing) {
+          throw new Error(t('Eintrag konnte nicht geladen werden.', 'Entry could not be loaded.'))
+        }
+        const involvesRecurring = existing.recurring !== 'none' || payload.recurring !== 'none'
+        if (involvesRecurring && hasRecurringImpactChange(existing, payload)) {
+          setPendingIncomeUpdate({ id: editId, payload })
+          return
+        }
+        await updateIncomeEntry(editId, payload)
       } else {
         await addIncomeEntry(payload)
       }
@@ -395,23 +483,44 @@ export function IncomePage(): JSX.Element {
     }
   }
 
+  async function applyPendingIncomeUpdate(scope: ChangeScope): Promise<void> {
+    if (!pendingIncomeUpdate) {
+      return
+    }
+    try {
+      const effectiveFrom = scope === 'from-date' ? effectiveFromDate : undefined
+      await updateIncomeEntry(pendingIncomeUpdate.id, pendingIncomeUpdate.payload, { effectiveFrom })
+      setPendingIncomeUpdate(null)
+      closeForm()
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : t('Einkommenseintrag konnte nicht gespeichert werden.', 'Income entry could not be saved.'))
+      setPendingIncomeUpdate(null)
+    }
+  }
+
   function startEdit(item: IncomeEntry): void {
+    const sourceId = persistedIncomeEntryId(item.id)
+    const sourceEntry = incomeEntries.find((entry) => entry.id === sourceId)
+    if (!sourceEntry) {
+      setFormError(t('Eintrag konnte nicht geladen werden.', 'Entry could not be loaded.'))
+      return
+    }
     setIsFormOpen(true)
-    setEditId(item.id)
+    setEditId(sourceId)
     setFormMode('manual')
     setForm({
-      amount: item.amount,
-      date: item.date,
-      endDate: item.endDate,
-      source: item.source,
-      tags: item.tags,
-      notes: item.notes,
-      recurring: item.recurring,
-      recurringIntervalDays: item.recurringIntervalDays,
+      amount: sourceEntry.amount,
+      date: sourceEntry.date,
+      endDate: sourceEntry.endDate,
+      source: sourceEntry.source,
+      tags: sourceEntry.tags,
+      notes: sourceEntry.notes,
+      recurring: sourceEntry.recurring,
+      recurringIntervalDays: sourceEntry.recurringIntervalDays,
     })
-    setEffectiveFromDate(todayString())
+    setEffectiveFromDate(sourceEntry.recurring !== 'none' ? item.date : todayString())
     setShiftForm(buildDefaultShiftForm(resolvedDefaultShiftJobId))
-    setTagInput(item.tags.join(', '))
+    setTagInput(sourceEntry.tags.join(', '))
     setFormError('')
     window.requestAnimationFrame(() => dateInputRef.current?.focus())
   }
@@ -435,7 +544,7 @@ export function IncomePage(): JSX.Element {
   }
 
   function openDeleteConfirmation(item: IncomeEntry): void {
-    setConfirmDelete({ id: item.id, source: incomeSourceLabel(item, settings.language), date: item.date })
+    setConfirmDelete({ id: persistedIncomeEntryId(item.id), source: incomeSourceLabel(item, settings.language), date: item.date })
   }
 
   async function handleDeleteConfirmed(): Promise<void> {
@@ -478,6 +587,28 @@ export function IncomePage(): JSX.Element {
               {t('Jahr', 'Year')}
             </button>
           </div>
+          {viewMode === 'month' ? (
+            <input
+              type="month"
+              value={selectedMonth}
+              max={monthKey(today)}
+              onChange={(event) => setSelectedMonth(event.target.value || monthKey(today))}
+              aria-label={t('Monat auswählen', 'Select month')}
+            />
+          ) : null}
+          {viewMode === 'year' ? (
+            <select
+              value={selectedYear}
+              onChange={(event) => setSelectedYear(event.target.value)}
+              aria-label={t('Jahr auswählen', 'Select year')}
+            >
+              {selectableYears.map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+            </select>
+          ) : null}
           <input
             value={uiState.globalSearch}
             onChange={(event) => setUiState({ globalSearch: event.target.value })}
@@ -489,9 +620,11 @@ export function IncomePage(): JSX.Element {
 
       <div className="stats-grid">
         <article className="card stat-card">
-          <p className="muted">{t('Einkommen gesamt', 'Total income')} ({viewMode === 'month' ? t('Monat', 'month') : t('Jahr bis heute', 'Year to date')})</p>
+          <p className="muted">
+            {t('Einkommen gesamt', 'Total income')} ({viewMode === 'month' ? selectedMonthLabel : selectedYear})
+          </p>
           <p className="stat-value">{formatMoney(stats.total, settings.currency, settings.privacyHideAmounts)}</p>
-          {viewMode === 'year' ? (
+          {viewMode === 'year' && isSelectedYearCurrent ? (
             <p className="hint">
               {t('Bis heute inkl. wiederkehrender Einträge. Forecast (Jahr):', 'Up to today incl. recurring entries. Forecast (year):')}{' '}
               {formatMoney(stats.yearForecastTotal, settings.currency, settings.privacyHideAmounts)}
@@ -608,7 +741,7 @@ export function IncomePage(): JSX.Element {
                     <input type="time" value={shiftForm.endTime} onChange={(event) => setShiftForm((current) => ({ ...current, endTime: event.target.value }))} required />
                   </label>
                   <div className="stat-tile full-width">
-                    <small className="muted">{t('Stundensatz', 'Hourly rate')}: {shiftHourlyRate} {currencySymbol}/h</small>
+                    <small className="muted">{t('Stundensatz (netto)', 'Hourly rate (net)')}: {shiftHourlyRate} {currencySymbol}/h</small>
                     <strong>
                       {t('Berechnetes Einkommen', 'Calculated income')}:{' '}
                       {shiftPreview ? formatMoney(shiftPreview.amount, settings.currency, settings.privacyHideAmounts) : '—'}
@@ -716,6 +849,40 @@ export function IncomePage(): JSX.Element {
                 {t('Löschen', 'Delete')}
               </button>
               <button type="button" className="button button-secondary" onClick={closeConfirmDelete}>
+                {t('Abbrechen', 'Cancel')}
+              </button>
+            </div>
+          </article>
+        </div>
+      ) : null}
+
+      {pendingIncomeUpdate ? (
+        <div
+          className="form-modal-backdrop"
+          onMouseDown={pendingIncomeUpdateBackdropCloseGuard.onBackdropMouseDown}
+          onClick={pendingIncomeUpdateBackdropCloseGuard.onBackdropClick}
+          role="presentation"
+        >
+          <article className="card form-modal confirm-modal" onMouseDownCapture={pendingIncomeUpdateBackdropCloseGuard.onModalMouseDownCapture} onClick={(event) => event.stopPropagation()}>
+            <header className="section-header">
+              <h2>{t('Änderung anwenden', 'Apply change')}</h2>
+              <button type="button" className="icon-button" onClick={closePendingIncomeUpdate} aria-label={t('Popup schließen', 'Close popup')}>
+                x
+              </button>
+            </header>
+            <p>{t('Soll die Änderung rückwirkend gelten oder erst ab einem bestimmten Datum?', 'Should this change apply retroactively or only from a specific date?')}</p>
+            <label>
+              {t('Ab Datum', 'From date')}
+              <input type="date" value={effectiveFromDate} onChange={(event) => setEffectiveFromDate(event.target.value)} required />
+            </label>
+            <div className="form-actions">
+              <button type="button" className="button button-primary" onClick={() => void applyPendingIncomeUpdate('retroactive')}>
+                {t('Rückwirkend', 'Retroactive')}
+              </button>
+              <button type="button" className="button button-secondary" onClick={() => void applyPendingIncomeUpdate('from-date')}>
+                {t('Ab Datum übernehmen', 'Apply from date')}
+              </button>
+              <button type="button" className="button button-secondary" onClick={closePendingIncomeUpdate}>
                 {t('Abbrechen', 'Cancel')}
               </button>
             </div>

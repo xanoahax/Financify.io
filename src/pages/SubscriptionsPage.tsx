@@ -12,10 +12,16 @@ import { tx } from '../utils/i18n'
 import { categoryBreakdown, monthlyEquivalent, monthlyTotal, monthlyTrend, topSubscriptions, yearlyTotal } from '../utils/subscription'
 
 type SubscriptionFormState = Omit<Subscription, 'id' | 'createdAt' | 'updatedAt'>
+type ChangeScope = 'retroactive' | 'from-date'
 
 type ConfirmActionState =
   | { kind: 'cancel'; id: string; name: string }
   | { kind: 'delete'; id: string; name: string }
+
+interface PendingSubscriptionUpdateState {
+  id: string
+  payload: SubscriptionFormState
+}
 
 const SUBSCRIPTION_CATEGORY_PRESETS = [
   'Entertainment',
@@ -103,6 +109,7 @@ export function SubscriptionsPage(): JSX.Element {
   const [statusFilter, setStatusFilter] = useState<'all' | SubscriptionStatus>('all')
   const [formError, setFormError] = useState('')
   const [confirmAction, setConfirmAction] = useState<ConfirmActionState | null>(null)
+  const [pendingSubscriptionUpdate, setPendingSubscriptionUpdate] = useState<PendingSubscriptionUpdateState | null>(null)
   const nameInputRef = useRef<HTMLInputElement | null>(null)
   const t = (de: string, en: string) => tx(settings.language, de, en)
   const monthLocale = settings.language === 'de' ? 'de-DE' : 'en-US'
@@ -114,10 +121,13 @@ export function SubscriptionsPage(): JSX.Element {
     setEffectiveFromDate(todayString())
     setForm(buildDefaultForm())
     setFormError('')
+    setPendingSubscriptionUpdate(null)
   }, [])
   const closeConfirmAction = useCallback(() => setConfirmAction(null), [])
+  const closePendingSubscriptionUpdate = useCallback(() => setPendingSubscriptionUpdate(null), [])
   const formBackdropCloseGuard = useGuardedBackdropClose(closeForm)
   const confirmBackdropCloseGuard = useGuardedBackdropClose(closeConfirmAction)
+  const pendingSubscriptionUpdateBackdropCloseGuard = useGuardedBackdropClose(closePendingSubscriptionUpdate)
 
   useEffect(() => {
     if (searchParams.get('quickAdd') !== '1') {
@@ -145,6 +155,10 @@ export function SubscriptionsPage(): JSX.Element {
       if (event.key !== 'Escape') {
         return
       }
+      if (pendingSubscriptionUpdate) {
+        setPendingSubscriptionUpdate(null)
+        return
+      }
       if (confirmAction) {
         setConfirmAction(null)
         return
@@ -153,7 +167,17 @@ export function SubscriptionsPage(): JSX.Element {
     }
     window.addEventListener('keydown', onEscape)
     return () => window.removeEventListener('keydown', onEscape)
-  }, [confirmAction, isFormOpen, closeForm])
+  }, [closeForm, confirmAction, isFormOpen, pendingSubscriptionUpdate])
+
+  const hasCostImpactChange = useCallback((existing: Subscription, payload: SubscriptionFormState): boolean => {
+    return (
+      payload.amount !== existing.amount ||
+      payload.interval !== existing.interval ||
+      payload.customIntervalMonths !== existing.customIntervalMonths ||
+      payload.name !== existing.name ||
+      payload.category !== existing.category
+    )
+  }, [])
 
   const filtered = useMemo(() => {
     const query = uiState.globalSearch.trim()
@@ -212,13 +236,36 @@ export function SubscriptionsPage(): JSX.Element {
       }
 
       if (editId) {
-        await updateSubscription(editId, payload, { effectiveFrom: effectiveFromDate })
+        const existing = subscriptions.find((item) => item.id === editId)
+        if (!existing) {
+          throw new Error(t('Abo nicht gefunden.', 'Subscription not found.'))
+        }
+        if (hasCostImpactChange(existing, payload)) {
+          setPendingSubscriptionUpdate({ id: editId, payload })
+          return
+        }
+        await updateSubscription(editId, payload)
       } else {
         await addSubscription(payload)
       }
       closeForm()
     } catch (error) {
       setFormError(error instanceof Error ? error.message : t('Abo konnte nicht gespeichert werden.', 'Subscription could not be saved.'))
+    }
+  }
+
+  async function applyPendingSubscriptionUpdate(scope: ChangeScope): Promise<void> {
+    if (!pendingSubscriptionUpdate) {
+      return
+    }
+    try {
+      const effectiveFrom = scope === 'from-date' ? effectiveFromDate : undefined
+      await updateSubscription(pendingSubscriptionUpdate.id, pendingSubscriptionUpdate.payload, { effectiveFrom })
+      setPendingSubscriptionUpdate(null)
+      closeForm()
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : t('Abo konnte nicht gespeichert werden.', 'Subscription could not be saved.'))
+      setPendingSubscriptionUpdate(null)
     }
   }
 
@@ -420,6 +467,40 @@ export function SubscriptionsPage(): JSX.Element {
                 {confirmAction.kind === 'cancel' ? t('Kündigen', 'Cancel subscription') : t('Löschen', 'Delete')}
               </button>
               <button type="button" className="button button-secondary" onClick={closeConfirmAction}>
+                {t('Abbrechen', 'Cancel')}
+              </button>
+            </div>
+          </article>
+        </div>
+      ) : null}
+
+      {pendingSubscriptionUpdate ? (
+        <div
+          className="form-modal-backdrop"
+          onMouseDown={pendingSubscriptionUpdateBackdropCloseGuard.onBackdropMouseDown}
+          onClick={pendingSubscriptionUpdateBackdropCloseGuard.onBackdropClick}
+          role="presentation"
+        >
+          <article className="card form-modal confirm-modal" onMouseDownCapture={pendingSubscriptionUpdateBackdropCloseGuard.onModalMouseDownCapture} onClick={(event) => event.stopPropagation()}>
+            <header className="section-header">
+              <h2>{t('Änderung anwenden', 'Apply change')}</h2>
+              <button type="button" className="icon-button" onClick={closePendingSubscriptionUpdate} aria-label={t('Popup schließen', 'Close popup')}>
+                x
+              </button>
+            </header>
+            <p>{t('Soll die Änderung rückwirkend gelten oder erst ab einem bestimmten Datum?', 'Should this change apply retroactively or only from a specific date?')}</p>
+            <label>
+              {t('Ab Datum', 'From date')}
+              <input type="date" value={effectiveFromDate} onChange={(event) => setEffectiveFromDate(event.target.value)} required />
+            </label>
+            <div className="form-actions">
+              <button type="button" className="button button-primary" onClick={() => void applyPendingSubscriptionUpdate('retroactive')}>
+                {t('Rückwirkend', 'Retroactive')}
+              </button>
+              <button type="button" className="button button-secondary" onClick={() => void applyPendingSubscriptionUpdate('from-date')}>
+                {t('Ab Datum übernehmen', 'Apply from date')}
+              </button>
+              <button type="button" className="button button-secondary" onClick={closePendingSubscriptionUpdate}>
                 {t('Abbrechen', 'Cancel')}
               </button>
             </div>

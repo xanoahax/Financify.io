@@ -63,6 +63,57 @@ function isDateString(raw: unknown): raw is string {
   return typeof raw === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw)
 }
 
+function normalizeFixedSalaryRevisions(raw: unknown, fallback: Pick<ShiftJobConfig, 'salaryAmount' | 'fixedPayInterval' | 'has13thSalary' | 'has14thSalary' | 'startDate'>): NonNullable<ShiftJobConfig['fixedSalaryRevisions']> {
+  const rows = Array.isArray(raw) ? raw : []
+  const parsed = rows
+    .map((row) => {
+      if (!row || typeof row !== 'object') {
+        return null
+      }
+      const source = row as {
+        startDate?: unknown
+        endDate?: unknown
+        salaryAmount?: unknown
+        fixedPayInterval?: unknown
+        has13thSalary?: unknown
+        has14thSalary?: unknown
+      }
+      const salaryAmount = Number(source.salaryAmount)
+      if (!Number.isFinite(salaryAmount) || salaryAmount <= 0 || !isDateString(source.startDate)) {
+        return null
+      }
+      return {
+        startDate: source.startDate,
+        endDate: isDateString(source.endDate) ? source.endDate : null,
+        salaryAmount,
+        fixedPayInterval: normalizeFixedPayInterval(source.fixedPayInterval),
+        has13thSalary: Boolean(source.has13thSalary),
+        has14thSalary: Boolean(source.has14thSalary),
+      }
+    })
+    .filter((row): row is NonNullable<typeof row> => Boolean(row))
+    .sort((left, right) => left.startDate.localeCompare(right.startDate))
+
+  if (parsed.length > 0) {
+    return parsed
+  }
+
+  const salaryAmount = Number(fallback.salaryAmount)
+  if (!Number.isFinite(salaryAmount) || salaryAmount <= 0) {
+    return []
+  }
+  return [
+    {
+      startDate: isDateString(fallback.startDate) ? fallback.startDate : todayDateString(),
+      endDate: null,
+      salaryAmount,
+      fixedPayInterval: normalizeFixedPayInterval(fallback.fixedPayInterval),
+      has13thSalary: Boolean(fallback.has13thSalary),
+      has14thSalary: Boolean(fallback.has14thSalary),
+    },
+  ]
+}
+
 function normalizeShiftJobs(raw: unknown, legacyRate: unknown): ShiftJobConfig[] {
   const rows = Array.isArray(raw) ? raw : []
   const jobs = rows.reduce<ShiftJobConfig[]>((acc, row) => {
@@ -79,6 +130,7 @@ function normalizeShiftJobs(raw: unknown, legacyRate: unknown): ShiftJobConfig[]
         has13thSalary?: unknown
         has14thSalary?: unknown
         startDate?: unknown
+        fixedSalaryRevisions?: unknown
       }
       const name = typeof source.name === 'string' ? source.name.trim() : ''
       if (!name) {
@@ -87,19 +139,27 @@ function normalizeShiftJobs(raw: unknown, legacyRate: unknown): ShiftJobConfig[]
       const inferredType = normalizeEmploymentType(source.employmentType)
       const id = typeof source.id === 'string' && source.id.trim() ? source.id : `job-${crypto.randomUUID()}`
       if (inferredType === 'fixed') {
-        const salaryAmount = Number(source.salaryAmount)
-        if (!Number.isFinite(salaryAmount) || salaryAmount <= 0) {
-          return acc
-        }
-        acc.push({
-          id,
-          name,
-          employmentType: 'fixed' as const,
-          salaryAmount,
+        const revisions = normalizeFixedSalaryRevisions(source.fixedSalaryRevisions, {
+          salaryAmount: Number(source.salaryAmount),
           fixedPayInterval: normalizeFixedPayInterval(source.fixedPayInterval),
           has13thSalary: Boolean(source.has13thSalary),
           has14thSalary: Boolean(source.has14thSalary),
           startDate: isDateString(source.startDate) ? source.startDate : todayDateString(),
+        })
+        if (revisions.length === 0) {
+          return acc
+        }
+        const latestRevision = revisions[revisions.length - 1]
+        acc.push({
+          id,
+          name,
+          employmentType: 'fixed' as const,
+          salaryAmount: latestRevision.salaryAmount,
+          fixedPayInterval: latestRevision.fixedPayInterval,
+          has13thSalary: latestRevision.has13thSalary,
+          has14thSalary: latestRevision.has14thSalary,
+          startDate: latestRevision.startDate,
+          fixedSalaryRevisions: revisions,
         })
         return acc
       }
