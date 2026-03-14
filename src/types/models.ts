@@ -1,4 +1,4 @@
-export type ThemeMode = 'light' | 'dark' | 'glass' | 'system'
+export type ThemeMode = 'light' | 'dark' | 'glass' | 'high-contrast' | 'system'
 export type AppLanguage = 'de' | 'en'
 
 export type SubscriptionInterval = 'monthly' | 'yearly' | 'four-weekly' | 'custom-months'
@@ -164,7 +164,6 @@ export interface Settings {
   gradientColorB: string
   backgroundImageBlurEnabled: boolean
   backgroundImageBlurAmount: number
-  reducedMotion: boolean
   currency: 'EUR' | 'USD'
   shiftJobs: ShiftJobConfig[]
   defaultShiftJobId: string

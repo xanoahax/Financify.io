@@ -3,6 +3,14 @@
 All notable changes for desktop releases are documented here.  
 Each release must have a matching section (`## vX.Y.Z`) so GitHub release notes and the in-app update dialog stay in sync.
 
+## v0.10.2
+- Added a new **High Contrast** theme and made it the default first-start look, paired with refreshed green default accent and gradient colors.
+- Refined onboarding and job setup UX with a cleaner company-first flow, no baked-in example values, matching **salary payouts per year** dropdowns, and currency-aware amount placeholders.
+- Refreshed accent color presets with much stronger colors, including a vivid neon green option.
+- Improved modal spacing so segmented controls, fields, and footer actions no longer sit too tightly together.
+- Tightened settings control hit areas to avoid accidental clicks beside switches and buttons.
+- Removed the manual **Reduced animations** setting while keeping system motion preferences intact.
+
 ## v0.10.1
 - Added an explicit **Apply change** confirmation step for edits that impact history, with the choice between:
   - **Retroactive**

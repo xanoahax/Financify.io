@@ -15,7 +15,6 @@ export function useDocumentAppearance(input: DocumentAppearanceInput): void {
     document.documentElement.dataset.theme = effectiveTheme
     document.documentElement.lang = language
     document.documentElement.dataset.gradientOverlay = settings.gradientOverlayEnabled ? 'on' : 'off'
-    document.documentElement.dataset.motion = settings.reducedMotion ? 'reduced' : 'full'
     document.documentElement.style.setProperty('--accent', settings.accentColor)
     document.documentElement.style.setProperty('--gradient-a', settings.gradientColorA)
     document.documentElement.style.setProperty('--gradient-b', settings.gradientColorB)
@@ -24,9 +23,7 @@ export function useDocumentAppearance(input: DocumentAppearanceInput): void {
     settings.gradientColorA,
     settings.gradientColorB,
     settings.gradientOverlayEnabled,
-    settings.reducedMotion,
     settings.theme,
     language,
   ])
 }
-

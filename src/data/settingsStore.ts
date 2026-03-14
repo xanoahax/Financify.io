@@ -12,14 +12,13 @@ type SupportedCurrency = (typeof SUPPORTED_CURRENCIES)[number]
 
 export const defaultSettings: Settings = {
   language: 'de',
-  theme: 'glass',
-  accentColor: '#0a84ff',
+  theme: 'high-contrast',
+  accentColor: '#00db04',
   gradientOverlayEnabled: true,
-  gradientColorA: '#0a84ff',
-  gradientColorB: '#25c99a',
+  gradientColorA: '#0aff33',
+  gradientColorB: '#149028',
   backgroundImageBlurEnabled: false,
   backgroundImageBlurAmount: 8,
-  reducedMotion: false,
   currency: 'EUR',
   shiftJobs: [],
   defaultShiftJobId: '',

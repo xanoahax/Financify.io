@@ -24,17 +24,17 @@ export function OnboardingCard(props: OnboardingCardProps): JSX.Element {
   const [authSecretConfirm, setAuthSecretConfirm] = useState('')
   const [jobEmploymentType, setJobEmploymentType] = useState<NonNullable<OnboardingSetupInput['jobEmploymentType']>>('casual')
   const [jobName, setJobName] = useState('')
-  const [jobRate, setJobRate] = useState('18')
-  const [jobSalaryAmount, setJobSalaryAmount] = useState('3000')
+  const [jobRate, setJobRate] = useState('')
+  const [jobSalaryAmount, setJobSalaryAmount] = useState('')
   const [jobFixedPayInterval, setJobFixedPayInterval] = useState<NonNullable<OnboardingSetupInput['jobFixedPayInterval']>>('monthly')
-  const [jobHas13thSalary, setJobHas13thSalary] = useState(false)
-  const [jobHas14thSalary, setJobHas14thSalary] = useState(false)
+  const [jobSalaryPaymentsPerYear, setJobSalaryPaymentsPerYear] = useState<'12' | '13' | '14'>('12')
   const [jobStartDate, setJobStartDate] = useState(todayString())
   const [stepIndex, setStepIndex] = useState(0)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const totalSteps = 4
   const isFinalStep = stepIndex === totalSteps - 1
+  const currencySymbol = currency === 'USD' ? '$' : '€'
 
   useEffect(() => {
     onThemePreviewChange(theme)
@@ -121,6 +121,8 @@ export function OnboardingCard(props: OnboardingCardProps): JSX.Element {
     setError('')
     setSubmitting(true)
     try {
+      const jobHas13thSalary = jobSalaryPaymentsPerYear === '13' || jobSalaryPaymentsPerYear === '14'
+      const jobHas14thSalary = jobSalaryPaymentsPerYear === '14'
       await onFinish({
         profileName,
         language,
@@ -247,6 +249,7 @@ export function OnboardingCard(props: OnboardingCardProps): JSX.Element {
                 <option value="light">{tx(language, 'Hell', 'Light')}</option>
                 <option value="dark">{tx(language, 'Dunkel', 'Dark')}</option>
                 <option value="glass">{tx(language, 'Glas', 'Glass')}</option>
+                <option value="high-contrast">{tx(language, 'Hoher Kontrast', 'High contrast')}</option>
                 <option value="system">{tx(language, 'System', 'System')}</option>
               </select>
             </label>
@@ -255,10 +258,6 @@ export function OnboardingCard(props: OnboardingCardProps): JSX.Element {
 
         {stepIndex === 3 ? (
           <>
-            <label>
-              {tx(language, 'Job (optional)', 'Job (optional)')}
-              <input value={jobName} onChange={(event) => setJobName(event.target.value)} placeholder={tx(language, 'z. B. FoodAffairs', 'e.g. FoodAffairs')} />
-            </label>
             <label>
               {tx(language, 'Anstellungsart', 'Employment type')}
               <select
@@ -269,17 +268,35 @@ export function OnboardingCard(props: OnboardingCardProps): JSX.Element {
                 <option value="fixed">{tx(language, 'Fixanstellung', 'Fixed')}</option>
               </select>
             </label>
+            <label>
+              {tx(language, 'Firma', 'Company')}
+              <input value={jobName} onChange={(event) => setJobName(event.target.value)} placeholder={tx(language, 'Firmenname', 'Company name')} />
+            </label>
 
             {jobEmploymentType === 'casual' ? (
               <label>
-                {tx(language, 'Stundensatz (netto, optional)', 'Hourly rate (net, optional)')}
-                <input type="number" min={0.01} step="0.01" value={jobRate} onChange={(event) => setJobRate(event.target.value)} />
+                {`${tx(language, 'Stundensatz (netto)', 'Hourly rate (net)')} (${currencySymbol}/h)`}
+                <input
+                  type="number"
+                  min={0.01}
+                  step="0.01"
+                  value={jobRate}
+                  onChange={(event) => setJobRate(event.target.value)}
+                  placeholder={tx(language, `Betrag in ${currency}`, `Amount in ${currency}`)}
+                />
               </label>
             ) : (
               <>
                 <label>
-                  {tx(language, 'Gehalt (netto, pro Auszahlung)', 'Salary (net, per payout)')}
-                  <input type="number" min={0.01} step="0.01" value={jobSalaryAmount} onChange={(event) => setJobSalaryAmount(event.target.value)} />
+                  {`${tx(language, 'Gehalt pro Auszahlung (netto)', 'Salary per payout (net)')} (${currencySymbol})`}
+                  <input
+                    type="number"
+                    min={0.01}
+                    step="0.01"
+                    value={jobSalaryAmount}
+                    onChange={(event) => setJobSalaryAmount(event.target.value)}
+                    placeholder={tx(language, `Betrag in ${currency}`, `Amount in ${currency}`)}
+                  />
                 </label>
                 <label>
                   {tx(language, 'Auszahlungsintervall', 'Payout interval')}
@@ -296,19 +313,13 @@ export function OnboardingCard(props: OnboardingCardProps): JSX.Element {
                   {tx(language, 'Startdatum', 'Start date')}
                   <input type="date" value={jobStartDate} onChange={(event) => setJobStartDate(event.target.value)} />
                 </label>
-                <label className="toggle-row">
-                  <span className={`switch ${jobHas13thSalary ? 'on' : ''}`} aria-hidden="true">
-                    <input type="checkbox" checked={jobHas13thSalary} onChange={(event) => setJobHas13thSalary(event.target.checked)} />
-                    <span className="thumb" />
-                  </span>
-                  <span>{tx(language, '13. Gehalt', '13th salary')}</span>
-                </label>
-                <label className="toggle-row">
-                  <span className={`switch ${jobHas14thSalary ? 'on' : ''}`} aria-hidden="true">
-                    <input type="checkbox" checked={jobHas14thSalary} onChange={(event) => setJobHas14thSalary(event.target.checked)} />
-                    <span className="thumb" />
-                  </span>
-                  <span>{tx(language, '14. Gehalt', '14th salary')}</span>
+                <label>
+                  {tx(language, 'Gehälter pro Jahr', 'Salary payouts per year')}
+                  <select value={jobSalaryPaymentsPerYear} onChange={(event) => setJobSalaryPaymentsPerYear(event.target.value as '12' | '13' | '14')}>
+                    <option value="12">12</option>
+                    <option value="13">13</option>
+                    <option value="14">14</option>
+                  </select>
                 </label>
               </>
             )}

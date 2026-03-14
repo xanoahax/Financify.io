@@ -9,7 +9,7 @@ import { getCurrencySymbol } from '../utils/format'
 import { tx } from '../utils/i18n'
 import { calculateShiftIncome } from '../utils/shiftIncome'
 
-const accentPresets = ['#0a84ff', '#2ec4b6', '#ff9f0a', '#bf5af2', '#ff375f', '#6e6e73']
+const accentPresets = ['#008cff', '#00d5ff', '#ff9a00', '#c93cff', '#ff2d55', '#39ff14']
 
 interface JobDraftState {
   name: string
@@ -211,8 +211,8 @@ export function SettingsPage(): JSX.Element {
   const [jobDraft, setJobDraft] = useState<JobDraftState>({
     name: '',
     employmentType: 'casual',
-    hourlyRate: '18',
-    salaryAmount: '3000',
+    hourlyRate: '',
+    salaryAmount: '',
     fixedPayInterval: 'monthly',
     salaryPaymentsPerYear: '12',
     startDate: todayDateString(),
@@ -281,10 +281,10 @@ export function SettingsPage(): JSX.Element {
     setEditingJobId(null)
     setJobChangeScopeModalOpen(false)
     setJobDraft({
-      name: t('Neuer Job', 'New job'),
+      name: '',
       employmentType: 'casual',
-      hourlyRate: '18',
-      salaryAmount: '3000',
+      hourlyRate: '',
+      salaryAmount: '',
       fixedPayInterval: 'monthly',
       salaryPaymentsPerYear: '12',
       startDate: todayDateString(),
@@ -732,6 +732,7 @@ export function SettingsPage(): JSX.Element {
                   <option value="light">{t('Hell', 'Light')}</option>
                   <option value="dark">{t('Dunkel', 'Dark')}</option>
                   <option value="glass">{t('Glas', 'Glass')}</option>
+                  <option value="high-contrast">{t('Hoher Kontrast', 'High contrast')}</option>
                   <option value="system">{t('System', 'System')}</option>
                 </select>
               </label>
@@ -739,7 +740,7 @@ export function SettingsPage(): JSX.Element {
 
             <section className="settings-group">
               <p className="settings-group-title">{t('Farben', 'Colors')}</p>
-              <label>
+              <div className="setting-field">
                 <span>{t('Akzentfarbe', 'Accent color')}</span>
                 <div className="color-row accent-picker">
                   {accentPresets.map((color) => (
@@ -763,7 +764,7 @@ export function SettingsPage(): JSX.Element {
                     <input type="color" value={settings.accentColor} onChange={(event) => setSettings({ accentColor: event.target.value })} />
                   </label>
                 </div>
-              </label>
+              </div>
               <label className="switch">
                 <input
                   type="checkbox"
@@ -773,7 +774,7 @@ export function SettingsPage(): JSX.Element {
                 <span>{t('Gradient-Overlay', 'Gradient overlay')}</span>
               </label>
               {settings.gradientOverlayEnabled ? (
-                <label>
+                <div className="setting-field">
                   <span>{t('Gradient-Farben', 'Gradient colors')}</span>
                   <div className="color-row gradient-color-row">
                     <label className="color-picker-circle" style={{ backgroundColor: settings.gradientColorA }} aria-label={t('Gradient-Farbe A', 'Gradient color A')}>
@@ -797,13 +798,13 @@ export function SettingsPage(): JSX.Element {
                       />
                     </label>
                   </div>
-                </label>
+                </div>
               ) : null}
             </section>
 
             <section className="settings-group">
               <p className="settings-group-title">{t('Hintergrund', 'Background')}</p>
-              <label>
+              <div className="setting-field">
                 <span>{t('Hintergrundbild', 'Background image')}</span>
                 <div className="inline-controls">
                   <label className="button button-secondary file-picker">
@@ -814,7 +815,7 @@ export function SettingsPage(): JSX.Element {
                     {t('Bild entfernen', 'Remove image')}
                   </button>
                 </div>
-              </label>
+              </div>
               {backgroundError ? <p className="error-text">{backgroundError}</p> : null}
               {hasBackgroundImage ? <img className="background-preview" src={backgroundImageDataUrl ?? ''} alt={t('Vorschau des gewählten Hintergrundbilds', 'Preview of selected background image')} /> : null}
               <label className={`switch ${!hasBackgroundImage ? 'switch-disabled' : ''}`}>
@@ -841,13 +842,6 @@ export function SettingsPage(): JSX.Element {
               ) : null}
             </section>
 
-            <section className="settings-group">
-              <p className="settings-group-title">{t('Bewegung', 'Motion')}</p>
-              <label className="switch">
-                <input type="checkbox" checked={settings.reducedMotion} onChange={(event) => setSettings({ reducedMotion: event.target.checked })} />
-                <span>{t('Reduzierte Animationen', 'Reduced animations')}</span>
-              </label>
-            </section>
           </div>
         </article>
 
@@ -1039,11 +1033,11 @@ export function SettingsPage(): JSX.Element {
                 </select>
               </label>
               <label>
-                {t('Jobname', 'Job name')}
+                {t('Firma', 'Company')}
                 <input
                   value={jobDraft.name}
                   onChange={(event) => setJobDraft((current) => ({ ...current, name: event.target.value }))}
-                  placeholder={t('z. B. Marketing', 'e.g. Marketing')}
+                  placeholder={t('Firmenname', 'Company name')}
                 />
               </label>
               {jobDraft.employmentType === 'casual' ? (
@@ -1055,6 +1049,7 @@ export function SettingsPage(): JSX.Element {
                     step="0.01"
                     value={jobDraft.hourlyRate}
                     onChange={(event) => setJobDraft((current) => ({ ...current, hourlyRate: event.target.value }))}
+                    placeholder={t(`Betrag in ${settings.currency}`, `Amount in ${settings.currency}`)}
                   />
                 </label>
               ) : (
@@ -1067,6 +1062,7 @@ export function SettingsPage(): JSX.Element {
                       step="0.01"
                       value={jobDraft.salaryAmount}
                       onChange={(event) => setJobDraft((current) => ({ ...current, salaryAmount: event.target.value }))}
+                      placeholder={t(`Betrag in ${settings.currency}`, `Amount in ${settings.currency}`)}
                     />
                   </label>
                   <label>
