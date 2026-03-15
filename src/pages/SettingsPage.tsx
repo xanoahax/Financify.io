@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import packageJson from '../../package.json'
 import { useGuardedBackdropClose } from '../hooks/useGuardedBackdropClose'
 import { useAppContext } from '../state/useAppContext'
@@ -22,6 +22,7 @@ interface JobDraftState {
 }
 
 type FixedJobChangeScope = 'retroactive' | 'from-date'
+const AVATAR_CROP_SIZE = 320
 
 function makeJobId(): string {
   return `job-${crypto.randomUUID()}`
@@ -138,7 +139,7 @@ function loadImageFromDataUrl(dataUrl: string): Promise<HTMLImageElement> {
 
 async function buildCroppedAvatarDataUrl(dataUrl: string, zoom: number, offsetX: number, offsetY: number): Promise<string> {
   const image = await loadImageFromDataUrl(dataUrl)
-  const size = 320
+  const size = AVATAR_CROP_SIZE
   const canvas = document.createElement('canvas')
   canvas.width = size
   canvas.height = size
@@ -157,6 +158,33 @@ async function buildCroppedAvatarDataUrl(dataUrl: string, zoom: number, offsetX:
   ctx.clearRect(0, 0, size, size)
   ctx.drawImage(image, dx, dy, drawWidth, drawHeight)
   return canvas.toDataURL('image/png')
+}
+
+function getAvatarCropBounds(imageWidth: number, imageHeight: number, zoom: number): { maxOffsetX: number; maxOffsetY: number } {
+  const baseScale = Math.max(AVATAR_CROP_SIZE / imageWidth, AVATAR_CROP_SIZE / imageHeight)
+  const appliedScale = baseScale * zoom
+  const drawWidth = imageWidth * appliedScale
+  const drawHeight = imageHeight * appliedScale
+  return {
+    maxOffsetX: Math.max(0, (drawWidth - AVATAR_CROP_SIZE) / 2),
+    maxOffsetY: Math.max(0, (drawHeight - AVATAR_CROP_SIZE) / 2),
+  }
+}
+
+function clampAvatarOffsets(
+  offsetX: number,
+  offsetY: number,
+  imageSize: { width: number; height: number } | null,
+  zoom: number,
+): { offsetX: number; offsetY: number } {
+  if (!imageSize) {
+    return { offsetX, offsetY }
+  }
+  const { maxOffsetX, maxOffsetY } = getAvatarCropBounds(imageSize.width, imageSize.height, zoom)
+  return {
+    offsetX: Math.min(maxOffsetX, Math.max(-maxOffsetX, offsetX)),
+    offsetY: Math.min(maxOffsetY, Math.max(-maxOffsetY, offsetY)),
+  }
 }
 
 export function SettingsPage(): JSX.Element {
@@ -199,11 +227,17 @@ export function SettingsPage(): JSX.Element {
   const [savingProfileEdit, setSavingProfileEdit] = useState(false)
   const [avatarEditorOpen, setAvatarEditorOpen] = useState(false)
   const [avatarSourceDataUrl, setAvatarSourceDataUrl] = useState('')
+  const [avatarImageSize, setAvatarImageSize] = useState<{ width: number; height: number } | null>(null)
   const [avatarZoom, setAvatarZoom] = useState(1.15)
   const [avatarOffsetX, setAvatarOffsetX] = useState(0)
   const [avatarOffsetY, setAvatarOffsetY] = useState(0)
   const [avatarEditorError, setAvatarEditorError] = useState('')
   const [avatarEditorSaving, setAvatarEditorSaving] = useState(false)
+  const [avatarDragging, setAvatarDragging] = useState(false)
+  const [avatarPreviewSize, setAvatarPreviewSize] = useState(AVATAR_CROP_SIZE)
+  const avatarDragPointerIdRef = useRef<number | null>(null)
+  const avatarDragStartRef = useRef<{ x: number; y: number; offsetX: number; offsetY: number } | null>(null)
+  const avatarPreviewRef = useRef<HTMLDivElement | null>(null)
   const [jobModalOpen, setJobModalOpen] = useState(false)
   const [jobModalMode, setJobModalMode] = useState<'create' | 'edit'>('create')
   const [editingJobId, setEditingJobId] = useState<string | null>(null)
@@ -238,6 +272,9 @@ export function SettingsPage(): JSX.Element {
     setAvatarEditorOpen(false)
     setAvatarEditorError('')
     setAvatarEditorSaving(false)
+    setAvatarDragging(false)
+    avatarDragPointerIdRef.current = null
+    avatarDragStartRef.current = null
   }, [])
   const editProfileBackdropCloseGuard = useGuardedBackdropClose(closeEditProfile)
   const deleteProfileBackdropCloseGuard = useGuardedBackdropClose(closeDeleteProfileConfirm)
@@ -246,6 +283,80 @@ export function SettingsPage(): JSX.Element {
   const jobModalBackdropCloseGuard = useGuardedBackdropClose(closeJobModal)
   const jobChangeScopeBackdropCloseGuard = useGuardedBackdropClose(closeJobChangeScopeModal)
   const avatarEditorBackdropCloseGuard = useGuardedBackdropClose(closeAvatarEditor)
+
+  useEffect(() => {
+    if (!avatarEditorOpen) {
+      return
+    }
+    const element = avatarPreviewRef.current
+    if (!element) {
+      return
+    }
+    const updatePreviewSize = (): void => {
+      setAvatarPreviewSize(element.clientWidth || AVATAR_CROP_SIZE)
+    }
+    updatePreviewSize()
+    if (typeof ResizeObserver === 'undefined') {
+      return
+    }
+    const observer = new ResizeObserver(() => updatePreviewSize())
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [avatarEditorOpen])
+
+  useEffect(() => {
+    const clamped = clampAvatarOffsets(avatarOffsetX, avatarOffsetY, avatarImageSize, avatarZoom)
+    if (clamped.offsetX !== avatarOffsetX) {
+      setAvatarOffsetX(clamped.offsetX)
+    }
+    if (clamped.offsetY !== avatarOffsetY) {
+      setAvatarOffsetY(clamped.offsetY)
+    }
+  }, [avatarImageSize, avatarOffsetX, avatarOffsetY, avatarZoom])
+
+  function handleAvatarDragStart(event: React.PointerEvent<HTMLDivElement>): void {
+    if (!avatarSourceDataUrl) {
+      return
+    }
+    avatarDragPointerIdRef.current = event.pointerId
+    avatarDragStartRef.current = {
+      x: event.clientX,
+      y: event.clientY,
+      offsetX: avatarOffsetX,
+      offsetY: avatarOffsetY,
+    }
+    setAvatarDragging(true)
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  function handleAvatarDragMove(event: React.PointerEvent<HTMLDivElement>): void {
+    if (avatarDragPointerIdRef.current !== event.pointerId || !avatarDragStartRef.current) {
+      return
+    }
+    const previewScale = (avatarPreviewRef.current?.clientWidth || avatarPreviewSize || AVATAR_CROP_SIZE) / AVATAR_CROP_SIZE
+    const deltaX = event.clientX - avatarDragStartRef.current.x
+    const deltaY = event.clientY - avatarDragStartRef.current.y
+    const clamped = clampAvatarOffsets(
+      avatarDragStartRef.current.offsetX + deltaX / previewScale,
+      avatarDragStartRef.current.offsetY + deltaY / previewScale,
+      avatarImageSize,
+      avatarZoom,
+    )
+    setAvatarOffsetX(clamped.offsetX)
+    setAvatarOffsetY(clamped.offsetY)
+  }
+
+  function handleAvatarDragEnd(event: React.PointerEvent<HTMLDivElement>): void {
+    if (avatarDragPointerIdRef.current !== event.pointerId) {
+      return
+    }
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+    avatarDragPointerIdRef.current = null
+    avatarDragStartRef.current = null
+    setAvatarDragging(false)
+  }
 
   async function exportJson(): Promise<void> {
     const payload = exportBackup()
@@ -560,7 +671,9 @@ export function SettingsPage(): JSX.Element {
       if (!dataUrl.startsWith('data:image/')) {
         throw new Error('invalid-image')
       }
+      const image = await loadImageFromDataUrl(dataUrl)
       setAvatarSourceDataUrl(dataUrl)
+      setAvatarImageSize({ width: image.naturalWidth || image.width, height: image.naturalHeight || image.height })
       setAvatarZoom(1.15)
       setAvatarOffsetX(0)
       setAvatarOffsetY(0)
@@ -649,6 +762,8 @@ export function SettingsPage(): JSX.Element {
       setSavingProfileEdit(false)
     }
   }
+
+  const avatarPreviewScale = avatarPreviewSize / AVATAR_CROP_SIZE
 
   return (
     <section className="page">
@@ -1177,12 +1292,21 @@ export function SettingsPage(): JSX.Element {
               </button>
             </header>
             <div className="setting-list">
-              <div className="avatar-crop-preview">
+              <div
+                ref={avatarPreviewRef}
+                className={`avatar-crop-preview ${avatarDragging ? 'dragging' : ''}`}
+                onDragStart={(event) => event.preventDefault()}
+                onPointerDown={handleAvatarDragStart}
+                onPointerMove={handleAvatarDragMove}
+                onPointerUp={handleAvatarDragEnd}
+                onPointerCancel={handleAvatarDragEnd}
+              >
                 {avatarSourceDataUrl ? (
                   <img
                     src={avatarSourceDataUrl}
                     alt=""
-                    style={{ transform: `translate(${avatarOffsetX}px, ${avatarOffsetY}px) scale(${avatarZoom})` }}
+                    draggable={false}
+                    style={{ transform: `translate(${avatarOffsetX * avatarPreviewScale}px, ${avatarOffsetY * avatarPreviewScale}px) scale(${avatarZoom})` }}
                   />
                 ) : null}
               </div>
@@ -1190,14 +1314,7 @@ export function SettingsPage(): JSX.Element {
                 {t('Zoom', 'Zoom')}
                 <input type="range" min={1} max={3} step={0.01} value={avatarZoom} onChange={(event) => setAvatarZoom(Number(event.target.value))} />
               </label>
-              <label>
-                {t('Horizontaler Ausschnitt', 'Horizontal crop')}
-                <input type="range" min={-140} max={140} step={1} value={avatarOffsetX} onChange={(event) => setAvatarOffsetX(Number(event.target.value))} />
-              </label>
-              <label>
-                {t('Vertikaler Ausschnitt', 'Vertical crop')}
-                <input type="range" min={-140} max={140} step={1} value={avatarOffsetY} onChange={(event) => setAvatarOffsetY(Number(event.target.value))} />
-              </label>
+              <p className="muted">{t('Bild im Kreis ziehen, um den Ausschnitt zu wählen.', 'Drag the image inside the circle to position the crop.')}</p>
               {avatarEditorError ? <p className="error-text">{avatarEditorError}</p> : null}
             </div>
             <div className="form-actions">

@@ -3,6 +3,12 @@
 All notable changes for desktop releases are documented here.  
 Each release must have a matching section (`## vX.Y.Z`) so GitHub release notes and the in-app update dialog stay in sync.
 
+## v0.10.3
+- Improved profile image cropping with direct drag positioning inside the crop circle while keeping zoom control.
+- Added crop boundaries so profile images can no longer be dragged beyond the visible frame.
+- Fixed broken umlauts and encoding issues on the Household costs page.
+- Reviewed visible app translations and cleaned up remaining household text issues.
+
 ## v0.10.2
 - Added a new **High Contrast** theme and made it the default first-start look, paired with refreshed green default accent and gradient colors.
 - Refined onboarding and job setup UX with a cleaner company-first flow, no baked-in example values, matching **salary payouts per year** dropdowns, and currency-aware amount placeholders.

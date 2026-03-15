@@ -1681,6 +1681,8 @@ input[type='checkbox']:disabled {
   border: 1px solid var(--border);
   background: var(--surface-soft);
   margin-inline: auto;
+  cursor: grab;
+  touch-action: none;
 }
 
 .avatar-crop-preview img {
@@ -1688,6 +1690,13 @@ input[type='checkbox']:disabled {
   height: 100%;
   object-fit: cover;
   transform-origin: center;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.avatar-crop-preview.dragging {
+  cursor: grabbing;
 }
 
 .empty-inline {
