@@ -3,6 +3,10 @@
 All notable changes for desktop releases are documented here.  
 Each release must have a matching section (`## vX.Y.Z`) so GitHub release notes and the in-app update dialog stay in sync.
 
+## v0.10.4
+- Updated the app icon and website favicon set to the new branding asset.
+- Refined the sidebar header alignment so the `financify` wordmark sits more cleanly with the navigation.
+
 ## v0.10.3
 - Improved profile image cropping with direct drag positioning inside the crop circle while keeping zoom control.
 - Added crop boundaries so profile images can no longer be dragged beyond the visible frame.
