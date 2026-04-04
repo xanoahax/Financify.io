@@ -3,6 +3,13 @@
 All notable changes for desktop releases are documented here.  
 Each release must have a matching section (`## vX.Y.Z`) so GitHub release notes and the in-app update dialog stay in sync.
 
+## v0.11.0
+- Introduced the first major desktop redesign pass with a cleaner dashboard-inspired shell, dock-style sidebar, refined top controls, and aligned card layouts across core pages.
+- Simplified appearance to focused light and dark themes, added a more neutral greyscale dark mode, and polished modal, dropdown, and form field surfaces for a calmer UI.
+- Upgraded charts and summaries with animated KPIs, improved line and donut visuals, cleaner hover states, and clearer cost-based color logic for subscriptions and household views.
+- Refined login and settings UX with updated in-app branding, improved profile and settings layouts, and more consistent spacing, alignment, and page transitions.
+- Updated desktop and web icon assets to the new branding set and switched issue reporting to the new Google Form flow.
+
 ## v0.10.4
 - Updated the app icon and website favicon set to the new branding asset.
 - Refined the sidebar header alignment so the `financify` wordmark sits more cleanly with the navigation.
@@ -104,3 +111,4 @@ Each release must have a matching section (`## vX.Y.Z`) so GitHub release notes 
 ## v0.9.46
 - Updated release workflow to handle immutable GitHub releases reliably (draft -> publish).
 - Added dynamic tag resolution in the release workflow.
+
