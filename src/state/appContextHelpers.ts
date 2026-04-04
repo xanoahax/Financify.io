@@ -204,11 +204,17 @@ export function normalizeImportedSettings(raw: unknown): Settings {
       : casualJobs[0]?.id ?? ''
 
   return {
-    ...defaultSettings,
-    ...candidate,
+    language: candidate.language === 'en' ? 'en' : defaultSettings.language,
+    theme: candidate.theme === 'light' ? 'light' : 'dark',
     currency: normalizeCurrency(candidate.currency),
     shiftJobs,
     defaultShiftJobId,
+    dateFormat:
+      candidate.dateFormat === 'MM/DD/YYYY' || candidate.dateFormat === 'YYYY-MM-DD'
+        ? candidate.dateFormat
+        : defaultSettings.dateFormat,
+    startOfWeek: candidate.startOfWeek === 'sunday' ? 'sunday' : defaultSettings.startOfWeek,
+    privacyHideAmounts: Boolean(candidate.privacyHideAmounts),
   }
 }
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import packageJson from '../../package.json'
+import { useCardRowStagger } from '../hooks/useCardRowStagger'
 import { useGuardedBackdropClose } from '../hooks/useGuardedBackdropClose'
 import { useAppContext } from '../state/useAppContext'
 import type { AppBackup, EmploymentType, FixedPayInterval, IncomeEntry, ShiftJobConfig } from '../types/models'
@@ -8,8 +9,8 @@ import { saveTextFileWithDialog } from '../utils/csv'
 import { getCurrencySymbol } from '../utils/format'
 import { tx } from '../utils/i18n'
 import { calculateShiftIncome } from '../utils/shiftIncome'
-
-const accentPresets = ['#008cff', '#00d5ff', '#ff9a00', '#c93cff', '#ff2d55', '#39ff14']
+const REPORT_ISSUE_URL =
+  'https://docs.google.com/forms/d/e/1FAIpQLSfjM6Orz05tAydFMepZCVP6w2L88xFloDB6TVqfV5Q5Ph2yOw/viewform?usp=publish-editor'
 
 interface JobDraftState {
   name: string
@@ -192,9 +193,6 @@ export function SettingsPage(): JSX.Element {
     settings,
     incomeEntries,
     setSettings,
-    backgroundImageDataUrl,
-    setBackgroundImageFromFile,
-    clearBackgroundImage,
     exportBackup,
     importBackup,
     clearAllData,
@@ -215,7 +213,6 @@ export function SettingsPage(): JSX.Element {
   const [importMode, setImportMode] = useState<'replace' | 'merge'>('replace')
   const [importError, setImportError] = useState('')
   const [importSuccessMessage, setImportSuccessMessage] = useState('')
-  const [backgroundError, setBackgroundError] = useState('')
   const [confirmClearAllData, setConfirmClearAllData] = useState(false)
   const [confirmDeleteProfile, setConfirmDeleteProfile] = useState(false)
   const [renameProfileName, setRenameProfileName] = useState(activeProfile?.name ?? '')
@@ -235,6 +232,7 @@ export function SettingsPage(): JSX.Element {
   const [avatarEditorSaving, setAvatarEditorSaving] = useState(false)
   const [avatarDragging, setAvatarDragging] = useState(false)
   const [avatarPreviewSize, setAvatarPreviewSize] = useState(AVATAR_CROP_SIZE)
+  const pageRef = useRef<HTMLElement | null>(null)
   const avatarDragPointerIdRef = useRef<number | null>(null)
   const avatarDragStartRef = useRef<{ x: number; y: number; offsetX: number; offsetY: number } | null>(null)
   const avatarPreviewRef = useRef<HTMLDivElement | null>(null)
@@ -253,7 +251,6 @@ export function SettingsPage(): JSX.Element {
   })
   const [jobModalError, setJobModalError] = useState('')
   const t = (de: string, en: string) => tx(settings.language, de, en)
-  const hasBackgroundImage = Boolean(backgroundImageDataUrl)
   const currencySymbol = getCurrencySymbol(settings.currency)
   const casualJobs = settings.shiftJobs.filter((job) => job.employmentType === 'casual')
   const canDeleteProfile = profiles.length > 1
@@ -634,20 +631,6 @@ export function SettingsPage(): JSX.Element {
     }
   }
 
-  async function onBackgroundImageSelected(event: React.ChangeEvent<HTMLInputElement>): Promise<void> {
-    const file = event.target.files?.[0]
-    if (!file) {
-      return
-    }
-    try {
-      setBackgroundError('')
-      await setBackgroundImageFromFile(file)
-      event.target.value = ''
-    } catch (error) {
-      setBackgroundError(error instanceof Error ? error.message : t('Hintergrundbild konnte nicht gesetzt werden.', 'Background image could not be set.'))
-    }
-  }
-
   async function handleClearAllDataConfirmed(): Promise<void> {
     try {
       setImportError('')
@@ -765,10 +748,12 @@ export function SettingsPage(): JSX.Element {
 
   const avatarPreviewScale = avatarPreviewSize / AVATAR_CROP_SIZE
 
+  useCardRowStagger(pageRef)
+
   return (
-    <section className="page">
+    <section ref={pageRef} className="page">
       <header className="page-header">
-        <div>
+        <div className="settings-header-copy">
           <h1>{t('Einstellungen', 'Settings')}</h1>
           <p className="muted">{t('Oberfläche, Präferenzen und lokales Backup-Verhalten anpassen.', 'Adjust interface, preferences and local backup behavior.')}</p>
         </div>
@@ -787,180 +772,54 @@ export function SettingsPage(): JSX.Element {
         </div>
       </header>
 
-      <article className="card">
-        <header className="section-header">
-          <h2>{t('Profile', 'Profile')}</h2>
-        </header>
-        <div className="setting-list">
-          <section className="settings-group profile-settings-group">
-            <p className="settings-group-title">{t('Profilbild', 'Profile image')}</p>
-            <div className="profile-avatar-row">
-              <div className="profile-avatar profile-avatar-large" aria-hidden="true">
-                {activeProfile?.avatarDataUrl ? (
-                  <img src={activeProfile.avatarDataUrl} alt="" />
-                ) : (
-                  <span>{profileInitials(activeProfile?.name ?? 'User')}</span>
-                )}
-              </div>
-              <div className="inline-controls">
-                <label className="button button-secondary file-picker">
-                  {t('Bild wählen', 'Choose image')}
-                  <input type="file" accept="image/*" onChange={(event) => void onAvatarImageSelected(event)} />
-                </label>
-                <button type="button" className="button button-tertiary" onClick={() => void removeActiveProfileAvatar()} disabled={!activeProfile?.avatarDataUrl}>
-                  {t('Bild entfernen', 'Remove image')}
-                </button>
-              </div>
-            </div>
-          </section>
-
-          <section className="settings-group profile-settings-group">
-            <p className="settings-group-title">{t('Profilverwaltung', 'Profile management')}</p>
-            <div className="profile-actions-row">
-              <button type="button" className="button button-secondary" onClick={openEditProfile} disabled={!activeProfile}>
-                {t('Profil bearbeiten', 'Edit profile')}
-              </button>
-              <button
-                type="button"
-                className="button button-danger"
-                onClick={() => setConfirmDeleteProfile(true)}
-                disabled={!activeProfile || !canDeleteProfile}
-              >
-                {t('Profil löschen', 'Delete profile')}
-              </button>
-            </div>
-          </section>
-        </div>
-      </article>
-
-      <div className="two-column">
-        <article className="card">
+      <section className="dashboard-grid">
+        <article className="card dashboard-card dashboard-card-fit">
           <header className="section-header">
-            <h2>{t('Darstellung', 'Appearance')}</h2>
+            <h2>{t('Profile', 'Profile')}</h2>
           </header>
-          <div className="setting-list appearance-settings">
-            <section className="settings-group">
-              <p className="settings-group-title">{t('Thema', 'Theme')}</p>
-              <label>
-                <span>{t('Thema', 'Theme')}</span>
-                <select value={settings.theme} onChange={(event) => setSettings({ theme: event.target.value as typeof settings.theme })}>
-                  <option value="light">{t('Hell', 'Light')}</option>
-                  <option value="dark">{t('Dunkel', 'Dark')}</option>
-                  <option value="glass">{t('Glas', 'Glass')}</option>
-                  <option value="high-contrast">{t('Hoher Kontrast', 'High contrast')}</option>
-                  <option value="system">{t('System', 'System')}</option>
-                </select>
-              </label>
-            </section>
-
-            <section className="settings-group">
-              <p className="settings-group-title">{t('Farben', 'Colors')}</p>
-              <div className="setting-field">
-                <span>{t('Akzentfarbe', 'Accent color')}</span>
-                <div className="color-row accent-picker">
-                  {accentPresets.map((color) => (
-                    <button
-                      key={color}
-                      type="button"
-                      className={`color-swatch ${settings.accentColor === color ? 'active' : ''}`}
-                      style={{ backgroundColor: color }}
-                      onClick={() => setSettings({ accentColor: color })}
-                      aria-label={t(`Akzentfarbe ${color} auswählen`, `Select accent color ${color}`)}
-                    />
-                  ))}
-                  <label
-                    className="color-picker-circle"
-                    style={{ backgroundColor: settings.accentColor }}
-                    aria-label={t('Eigene Akzentfarbe wählen', 'Choose custom accent color')}
-                  >
-                    <span className="color-picker-plus" aria-hidden="true">
-                      +
-                    </span>
-                    <input type="color" value={settings.accentColor} onChange={(event) => setSettings({ accentColor: event.target.value })} />
-                  </label>
+          <div className="setting-list">
+            <section className="settings-group profile-settings-group">
+              <p className="settings-group-title">{t('Profilbild', 'Profile image')}</p>
+              <div className="profile-avatar-row">
+                <div className="profile-avatar profile-avatar-large" aria-hidden="true">
+                  {activeProfile?.avatarDataUrl ? (
+                    <img src={activeProfile.avatarDataUrl} alt="" />
+                  ) : (
+                    <span>{profileInitials(activeProfile?.name ?? 'User')}</span>
+                  )}
                 </div>
-              </div>
-              <label className="switch">
-                <input
-                  type="checkbox"
-                  checked={settings.gradientOverlayEnabled}
-                  onChange={(event) => setSettings({ gradientOverlayEnabled: event.target.checked })}
-                />
-                <span>{t('Gradient-Overlay', 'Gradient overlay')}</span>
-              </label>
-              {settings.gradientOverlayEnabled ? (
-                <div className="setting-field">
-                  <span>{t('Gradient-Farben', 'Gradient colors')}</span>
-                  <div className="color-row gradient-color-row">
-                    <label className="color-picker-circle" style={{ backgroundColor: settings.gradientColorA }} aria-label={t('Gradient-Farbe A', 'Gradient color A')}>
-                      <span className="color-picker-plus" aria-hidden="true">
-                        +
-                      </span>
-                      <input
-                        type="color"
-                        value={settings.gradientColorA}
-                        onChange={(event) => setSettings({ gradientColorA: event.target.value })}
-                      />
-                    </label>
-                    <label className="color-picker-circle" style={{ backgroundColor: settings.gradientColorB }} aria-label={t('Gradient-Farbe B', 'Gradient color B')}>
-                      <span className="color-picker-plus" aria-hidden="true">
-                        +
-                      </span>
-                      <input
-                        type="color"
-                        value={settings.gradientColorB}
-                        onChange={(event) => setSettings({ gradientColorB: event.target.value })}
-                      />
-                    </label>
-                  </div>
-                </div>
-              ) : null}
-            </section>
-
-            <section className="settings-group">
-              <p className="settings-group-title">{t('Hintergrund', 'Background')}</p>
-              <div className="setting-field">
-                <span>{t('Hintergrundbild', 'Background image')}</span>
                 <div className="inline-controls">
                   <label className="button button-secondary file-picker">
                     {t('Bild wählen', 'Choose image')}
-                    <input type="file" accept="image/*" onChange={(event) => void onBackgroundImageSelected(event)} />
+                    <input type="file" accept="image/*" onChange={(event) => void onAvatarImageSelected(event)} />
                   </label>
-                  <button type="button" className="button button-tertiary" onClick={clearBackgroundImage} disabled={!hasBackgroundImage}>
+                  <button type="button" className="button button-tertiary" onClick={() => void removeActiveProfileAvatar()} disabled={!activeProfile?.avatarDataUrl}>
                     {t('Bild entfernen', 'Remove image')}
                   </button>
                 </div>
               </div>
-              {backgroundError ? <p className="error-text">{backgroundError}</p> : null}
-              {hasBackgroundImage ? <img className="background-preview" src={backgroundImageDataUrl ?? ''} alt={t('Vorschau des gewählten Hintergrundbilds', 'Preview of selected background image')} /> : null}
-              <label className={`switch ${!hasBackgroundImage ? 'switch-disabled' : ''}`}>
-                <input
-                  type="checkbox"
-                  checked={settings.backgroundImageBlurEnabled}
-                  onChange={(event) => setSettings({ backgroundImageBlurEnabled: event.target.checked })}
-                  disabled={!hasBackgroundImage}
-                />
-                <span>{t('Gewähltes Hintergrundbild weichzeichnen', 'Blur selected background image')}</span>
-              </label>
-              {hasBackgroundImage && settings.backgroundImageBlurEnabled ? (
-                <label>
-                  <span>{t('Stärke der Hintergrund-Weichzeichnung', 'Background blur strength')}</span>
-                  <input
-                    type="range"
-                    min={0}
-                    max={20}
-                    value={settings.backgroundImageBlurAmount}
-                    onChange={(event) => setSettings({ backgroundImageBlurAmount: Number(event.target.value) })}
-                  />
-                  <small className="muted">{settings.backgroundImageBlurAmount}px</small>
-                </label>
-              ) : null}
             </section>
 
+            <section className="settings-group profile-settings-group">
+              <p className="settings-group-title">{t('Profilverwaltung', 'Profile management')}</p>
+              <div className="profile-actions-row">
+                <button type="button" className="button button-secondary" onClick={openEditProfile} disabled={!activeProfile}>
+                  {t('Profil bearbeiten', 'Edit profile')}
+                </button>
+                <button
+                  type="button"
+                  className="button button-danger"
+                  onClick={() => setConfirmDeleteProfile(true)}
+                  disabled={!activeProfile || !canDeleteProfile}
+                >
+                  {t('Profil löschen', 'Delete profile')}
+                </button>
+              </div>
+            </section>
           </div>
         </article>
 
-        <article className="card">
+        <article className="card dashboard-card dashboard-card-fit">
           <header className="section-header">
             <h2>{t('Präferenzen', 'Preferences')}</h2>
           </header>
@@ -1004,118 +863,125 @@ export function SettingsPage(): JSX.Element {
             </label>
           </div>
         </article>
-      </div>
+      </section>
 
-      <article className="card">
-        <header className="section-header">
-          <h2>{t('Jobs', 'Jobs')}</h2>
-          <button type="button" className="button button-secondary" onClick={openCreateJobModal}>
-            {t('Job hinzufügen', 'Add job')}
-          </button>
-        </header>
-        <p className="muted">
-          {t(
-            'Lege Jobs als fallweise oder fixe Anstellung an. Fallweise Jobs können als Dienste geloggt werden, fixe Jobs werden automatisch als wiederkehrendes Einkommen berücksichtigt.',
-            'Configure jobs as casual or fixed employment. Casual jobs can be logged as shifts, fixed jobs are counted automatically as recurring income.',
-          )}
-        </p>
-        <div className="setting-list">
-          {settings.shiftJobs.length === 0 ? (
-            <p className="empty-inline">{t('Noch keine Jobs angelegt.', 'No jobs configured yet.')}</p>
-          ) : null}
-          {settings.shiftJobs.map((job) => (
-            <div className="job-row" key={job.id}>
-              <div>
-                <strong>{job.name}</strong>
-                <p className="muted">
-                  {job.employmentType === 'casual'
-                    ? `${t('Fallweise', 'Casual')} · ${job.hourlyRate ?? 18} ${currencySymbol}/h`
-                    : `${t('Fixanstellung', 'Fixed employment')} · ${job.salaryAmount ?? 0} ${currencySymbol} · ${
-                        job.fixedPayInterval === 'weekly'
-                          ? t('Wöchentlich', 'Weekly')
-                          : job.fixedPayInterval === 'biweekly'
-                            ? t('Zweiwöchentlich', 'Biweekly')
-                            : t('Monatlich', 'Monthly')
-                      }`}
-                </p>
-                {job.employmentType === 'fixed' ? (
-                  <p className="hint">
-                    {t('Start', 'Start')}: {job.startDate ?? todayDateString()} · {t('Extras', 'Extras')}:{' '}
-                    {job.has13thSalary || job.has14thSalary
-                      ? [job.has13thSalary ? '13' : null, job.has14thSalary ? '14' : null].filter(Boolean).join(' + ')
-                      : t('Keine', 'None')}
-                  </p>
-                ) : null}
-              </div>
-              <div className="inline-controls">
-                {job.employmentType === 'casual' ? (
-                  <button
-                    type="button"
-                    className={`button ${settings.defaultShiftJobId === job.id ? 'button-primary' : 'button-secondary'}`}
-                    onClick={() => setSettings({ defaultShiftJobId: job.id })}
-                  >
-                    {settings.defaultShiftJobId === job.id ? t('Standard für Dienste', 'Default for shifts') : t('Als Dienst-Standard setzen', 'Set as shift default')}
-                  </button>
-                ) : null}
-                <button type="button" className="button button-secondary" onClick={() => openEditJobModal(job)}>
-                  {t('Bearbeiten', 'Edit')}
-                </button>
-                <button
-                  type="button"
-                  className="button button-danger"
-                  onClick={() => deleteJob(job.id)}
-                >
-                  {t('Löschen', 'Delete')}
-                </button>
-              </div>
-            </div>
-          ))}
-          {casualJobs.length === 0 ? (
-            <p className="hint">{t('Hinweis: Für Dienst-Logging brauchst du mindestens einen fallweisen Job.', 'Note: You need at least one casual job for shift logging.')}</p>
-          ) : null}
-        </div>
-      </article>
-
-      <article className="card">
-        <header className="section-header">
-          <h2>{t('Datenverwaltung', 'Data management')}</h2>
-        </header>
-        <div className="setting-list">
-          {isCheckingForUpdates ? <p className="muted">{t('Suche nach Updates...','Checking for updates...')}</p> : null}
-          {skippedUpdateVersion ? (
-            <p className="muted">
-              {t(`Übersprungene Version: ${skippedUpdateVersion}`, `Skipped version: ${skippedUpdateVersion}`)}
-            </p>
-          ) : null}
-          {updateCheckError ? <p className="error-text">{updateCheckError}</p> : null}
-        </div>
-        {importError ? <p className="error-text">{importError}</p> : null}
-        <div className="inline-controls">
-          <button type="button" className="button button-secondary" onClick={() => void exportJson()}>
-            {t('JSON-Backup exportieren', 'Export JSON backup')}
-          </button>
-          <select value={importMode} onChange={(event) => setImportMode(event.target.value as 'replace' | 'merge')}>
-            <option value="replace">{t('Importmodus: Ersetzen', 'Import mode: Replace')}</option>
-            <option value="merge">{t('Importmodus: Zusammenführen', 'Import mode: Merge')}</option>
-          </select>
-          <label className="button button-primary file-picker">
-            {t('JSON importieren', 'Import JSON')}
-            <input type="file" accept="application/json" onChange={(event) => void onImport(event)} />
-          </label>
-        </div>
-        <div className="danger-zone">
-          <p className="danger-zone-title">{t('Gefahrenbereich', 'Danger Zone')}</p>
+      <section className="dashboard-grid">
+        <article className="card dashboard-card dashboard-card-fit">
+          <header className="section-header">
+            <h2>{t('Jobs', 'Jobs')}</h2>
+            <button type="button" className="button button-secondary" onClick={openCreateJobModal}>
+              {t('Job hinzufügen', 'Add job')}
+            </button>
+          </header>
           <p className="muted">
             {t(
-              'Löscht alle lokalen Daten des aktiven Profils: Abos, Einkommen, Einstellungen und Hintergrundbild.',
-              'Deletes all local data of the active profile: subscriptions, income, settings and background image.',
+              'Lege Jobs als fallweise oder fixe Anstellung an. Fallweise Jobs können als Dienste geloggt werden, fixe Jobs werden automatisch als wiederkehrendes Einkommen berücksichtigt.',
+              'Configure jobs as casual or fixed employment. Casual jobs can be logged as shifts, fixed jobs are counted automatically as recurring income.',
             )}
           </p>
-          <button type="button" className="button button-danger" onClick={() => setConfirmClearAllData(true)}>
-            {t('Alle Profildaten löschen', 'Delete profile data')}
-          </button>
-        </div>
-      </article>
+          <div className="setting-list">
+            {settings.shiftJobs.length === 0 ? (
+              <p className="empty-inline">{t('Noch keine Jobs angelegt.', 'No jobs configured yet.')}</p>
+            ) : null}
+            {settings.shiftJobs.map((job) => (
+              <div className="job-row" key={job.id}>
+                <div>
+                  <strong>{job.name}</strong>
+                  <p className="muted">
+                    {job.employmentType === 'casual'
+                      ? `${t('Fallweise', 'Casual')} · ${job.hourlyRate ?? 18} ${currencySymbol}/h`
+                      : `${t('Fixanstellung', 'Fixed employment')} · ${job.salaryAmount ?? 0} ${currencySymbol} · ${
+                          job.fixedPayInterval === 'weekly'
+                            ? t('Wöchentlich', 'Weekly')
+                            : job.fixedPayInterval === 'biweekly'
+                              ? t('Zweiwöchentlich', 'Biweekly')
+                              : t('Monatlich', 'Monthly')
+                        }`}
+                  </p>
+                  {job.employmentType === 'fixed' ? (
+                    <p className="hint">
+                      {t('Start', 'Start')}: {job.startDate ?? todayDateString()} · {t('Extras', 'Extras')}:{' '}
+                      {job.has13thSalary || job.has14thSalary
+                        ? [job.has13thSalary ? '13' : null, job.has14thSalary ? '14' : null].filter(Boolean).join(' + ')
+                        : t('Keine', 'None')}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="inline-controls">
+                  {job.employmentType === 'casual' ? (
+                    <button
+                      type="button"
+                      className={`button ${settings.defaultShiftJobId === job.id ? 'button-primary' : 'button-secondary'}`}
+                      onClick={() => setSettings({ defaultShiftJobId: job.id })}
+                    >
+                      {settings.defaultShiftJobId === job.id ? t('Standard für Dienste', 'Default for shifts') : t('Als Dienst-Standard setzen', 'Set as shift default')}
+                    </button>
+                  ) : null}
+                  <button type="button" className="button button-secondary" onClick={() => openEditJobModal(job)}>
+                    {t('Bearbeiten', 'Edit')}
+                  </button>
+                  <button
+                    type="button"
+                    className="button button-danger"
+                    onClick={() => deleteJob(job.id)}
+                  >
+                    {t('Löschen', 'Delete')}
+                  </button>
+                </div>
+              </div>
+            ))}
+            {casualJobs.length === 0 ? (
+              <p className="hint">{t('Hinweis: Für Dienst-Logging brauchst du mindestens einen fallweisen Job.', 'Note: You need at least one casual job for shift logging.')}</p>
+            ) : null}
+          </div>
+        </article>
+
+        <article className="card dashboard-card dashboard-card-fit">
+          <header className="section-header">
+            <h2>{t('Datenverwaltung', 'Data management')}</h2>
+          </header>
+          <div className="setting-list">
+            {isCheckingForUpdates ? <p className="muted">{t('Suche nach Updates...','Checking for updates...')}</p> : null}
+            {skippedUpdateVersion ? (
+              <p className="muted">
+                {t(`Übersprungene Version: ${skippedUpdateVersion}`, `Skipped version: ${skippedUpdateVersion}`)}
+              </p>
+            ) : null}
+            {updateCheckError ? <p className="error-text">{updateCheckError}</p> : null}
+          </div>
+          {importError ? <p className="error-text">{importError}</p> : null}
+          <div className="inline-controls">
+            <button type="button" className="button button-secondary" onClick={() => void exportJson()}>
+              {t('JSON-Backup exportieren', 'Export JSON backup')}
+            </button>
+            <select value={importMode} onChange={(event) => setImportMode(event.target.value as 'replace' | 'merge')}>
+              <option value="replace">{t('Importmodus: Ersetzen', 'Import mode: Replace')}</option>
+              <option value="merge">{t('Importmodus: Zusammenführen', 'Import mode: Merge')}</option>
+            </select>
+            <label className="button button-primary file-picker">
+              {t('JSON importieren', 'Import JSON')}
+              <input type="file" accept="application/json" onChange={(event) => void onImport(event)} />
+            </label>
+          </div>
+          <div className="danger-zone">
+            <p className="danger-zone-title">{t('Gefahrenbereich', 'Danger Zone')}</p>
+            <p className="muted">
+              {t(
+                'Löscht alle lokalen Daten des aktiven Profils: Abos, Einkommen, Einstellungen und Hintergrundbild.',
+                'Deletes all local data of the active profile: subscriptions, income, settings and background image.',
+              )}
+            </p>
+            <button type="button" className="button button-danger" onClick={() => setConfirmClearAllData(true)}>
+              {t('Alle Profildaten löschen', 'Delete profile data')}
+            </button>
+          </div>
+        </article>
+      </section>
+      <div className="settings-footer-link-row">
+        <a className="button button-tertiary settings-footer-link" href={REPORT_ISSUE_URL} target="_blank" rel="noreferrer">
+          {t('Problem melden', 'Report issue')}
+        </a>
+      </div>
 
       {jobModalOpen ? (
         <div
@@ -1492,3 +1358,6 @@ export function SettingsPage(): JSX.Element {
     </section>
   )
 }
+
+
+

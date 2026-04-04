@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { LineChart } from '../components/LineChart'
+import { useCardRowStagger } from '../hooks/useCardRowStagger'
 import { useGuardedBackdropClose } from '../hooks/useGuardedBackdropClose'
 import { useAppContext } from '../state/useAppContext'
 import type { InterestScenarioInput } from '../types/models'
@@ -25,6 +26,7 @@ function buildDefaultScenario(language: 'de' | 'en'): InterestScenarioInput {
 
 export function InterestPage(): JSX.Element {
   const { settings, scenarios, addScenario, deleteScenario } = useAppContext()
+  const pageRef = useRef<HTMLElement | null>(null)
   const [input, setInput] = useState<InterestScenarioInput>(() => buildDefaultScenario(settings.language))
   const [showDetails, setShowDetails] = useState(false)
   const [compareA, setCompareA] = useState<string>('')
@@ -34,6 +36,8 @@ export function InterestPage(): JSX.Element {
   const t = (de: string, en: string) => tx(settings.language, de, en)
   const closeConfirmDeleteScenario = () => setConfirmDeleteScenario(null)
   const confirmBackdropCloseGuard = useGuardedBackdropClose(closeConfirmDeleteScenario)
+
+  useCardRowStagger(pageRef)
 
   const result = useMemo(() => calculateInterestScenario(input), [input])
   const chartData = result.timeline.map((item) => ({ label: `M${item.month}`, value: item.balance }))
@@ -81,7 +85,7 @@ export function InterestPage(): JSX.Element {
   }
 
   return (
-    <section className="page">
+    <section ref={pageRef} className="page">
       <header className="page-header">
         <h1>{t('Zinsrechner', 'Interest calculator')}</h1>
         <p className="muted">{t('Berechne Zinseszins mit optionaler Inflation und Steuerannahmen.', 'Calculate compound interest with optional inflation and tax assumptions.')}</p>
@@ -216,7 +220,11 @@ export function InterestPage(): JSX.Element {
               </div>
             ) : null}
           </div>
-          <LineChart data={chartData} language={settings.language} />
+          <LineChart
+            data={chartData}
+            language={settings.language}
+            valueFormatter={(value) => formatMoney(value, settings.currency, settings.privacyHideAmounts)}
+          />
           <div className="chips">
             {contributionVsInterest.map((item) => (
               <span key={item.label} className="chip">

@@ -1,7 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
+import { AnimatedNumber } from '../components/AnimatedNumber'
 import { BarChart } from '../components/BarChart'
 import { DonutChart } from '../components/DonutChart'
 import { StatCard } from '../components/StatCard'
+import { useCardRowStagger } from '../hooks/useCardRowStagger'
 import { useAppContext } from '../state/useAppContext'
 import type { IncomeEntry } from '../types/models'
 import { addDays, formatDateByPattern, monthLabel, parseDate, todayString } from '../utils/date'
@@ -44,11 +46,14 @@ function incomeSourceLabel(entry: IncomeEntry, language: 'de' | 'en'): string {
 
 export function StatsPage(): JSX.Element {
   const { subscriptions, incomeEntries, settings } = useAppContext()
+  const pageRef = useRef<HTMLElement | null>(null)
   const [preset, setPreset] = useState<RangePreset>('12m')
   const [customStart, setCustomStart] = useState(addDays(todayString(), -90))
   const [customEnd, setCustomEnd] = useState(todayString())
   const t = (de: string, en: string) => tx(settings.language, de, en)
   const monthLocale = settings.language === 'de' ? 'de-DE' : 'en-US'
+
+  useCardRowStagger(pageRef)
 
   const range = resolveRange(preset, customStart, customEnd)
   const rangeDays = rangeLengthDays(range.start, range.end)
@@ -82,8 +87,9 @@ export function StatsPage(): JSX.Element {
   }, [incomeEntries, monthLocale, range.end, range.start, rangeDays, settings.language, settings.shiftJobs, subscriptions])
 
   return (
-    <section className="page">
-      <header className="page-header">
+    <section ref={pageRef} className="page">
+      <section className="page-top-row">
+      <header className="page-header page-header-compact">
         <h1>{t('Statistiken', 'Statistics')}</h1>
         <div className="page-actions">
           <select value={preset} onChange={(event) => setPreset(event.target.value as RangePreset)}>
@@ -99,44 +105,53 @@ export function StatsPage(): JSX.Element {
             </>
           ) : null}
         </div>
+        <p className="muted">
+          {t('Zeitraum', 'Range')}: {formatDateByPattern(range.start, settings.dateFormat)} - {formatDateByPattern(range.end, settings.dateFormat)}
+        </p>
       </header>
 
-      <p className="muted">
-        {t('Zeitraum', 'Range')}: {formatDateByPattern(range.start, settings.dateFormat)} - {formatDateByPattern(range.end, settings.dateFormat)}
-      </p>
-
-      <div className="stats-grid">
+        <div className="stats-grid stats-grid-top">
         <StatCard
           label={t('Einkommen (gewählter Zeitraum)', 'Income (selected range)')}
-          value={formatMoney(data.incomeTotal, settings.currency, settings.privacyHideAmounts)}
+          value={<AnimatedNumber value={data.incomeTotal} formatter={(value) => formatMoney(value, settings.currency, settings.privacyHideAmounts)} />}
           hint={`${t('ggü. Vorzeitraum', 'vs previous range')} ${toPercent(data.incomeDelta)}`}
         />
         <StatCard
           label={t('Geschätzte Abo-Ausgaben', 'Estimated subscription expenses')}
-          value={formatMoney(data.estimatedSpend, settings.currency, settings.privacyHideAmounts)}
+          value={<AnimatedNumber value={data.estimatedSpend} formatter={(value) => formatMoney(value, settings.currency, settings.privacyHideAmounts)} />}
           hint={`${formatMoney(data.monthlySpend, settings.currency, settings.privacyHideAmounts)} ${t('pro Monat', 'per month')}`}
         />
         <StatCard
           label={t('Cashflow', 'Cashflow')}
-          value={formatMoney(data.cashflow, settings.currency, settings.privacyHideAmounts)}
+          value={<AnimatedNumber value={data.cashflow} formatter={(value) => formatMoney(value, settings.currency, settings.privacyHideAmounts)} />}
           hint={`${t('Vorzeitraum', 'Previous range')}: ${formatDateByPattern(data.previousRange.start, settings.dateFormat)} - ${formatDateByPattern(data.previousRange.end, settings.dateFormat)}`}
         />
       </div>
+      </section>
 
-      <div className="three-column">
-        <article className="card">
+      <section className="dashboard-grid">
+        <article className="card dashboard-card">
           <h2>{t('Einkommenstrend', 'Income trend')}</h2>
           <BarChart data={data.monthlyIncomeSeries} language={settings.language} />
         </article>
-        <article className="card">
+        <article className="card dashboard-card">
           <h2>{t('Einkommensquellen', 'Income sources')}</h2>
-          <DonutChart data={data.sourceSeries} language={settings.language} />
+          <DonutChart
+            data={data.sourceSeries}
+            language={settings.language}
+            valueFormatter={(value) => formatMoney(value, settings.currency, settings.privacyHideAmounts)}
+          />
         </article>
-        <article className="card">
+        <article className="card dashboard-card card-span-2">
           <h2>{t('Abo-Kategorien', 'Subscription categories')}</h2>
-          <DonutChart data={data.categorySeries} language={settings.language} />
+          <DonutChart
+            data={data.categorySeries}
+            language={settings.language}
+            valueFormatter={(value) => formatMoney(value, settings.currency, settings.privacyHideAmounts)}
+            reverseColorScale
+          />
         </article>
-      </div>
+      </section>
     </section>
   )
 }

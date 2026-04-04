@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { UserProfile } from '../types/models'
 import { tx } from '../utils/i18n'
 import { ProfileAvatar } from './ProfileAvatar'
@@ -11,20 +11,34 @@ interface ProfileSwitcherProps {
   onSwitchProfile: (profileId: string) => void
   onCreateProfile?: () => void
   onLockProfile?: () => void
+  onOpenSettings?: () => void
   className?: string
   autoWidth?: boolean
+  variant?: 'default' | 'avatar'
 }
 
 export function ProfileSwitcher(props: ProfileSwitcherProps): JSX.Element {
-  const { profiles, activeProfileId, activeProfile, language, onSwitchProfile, onCreateProfile, onLockProfile, className, autoWidth = false } = props
+  const {
+    profiles,
+    activeProfileId,
+    activeProfile,
+    language,
+    onSwitchProfile,
+    onCreateProfile,
+    onLockProfile,
+    onOpenSettings,
+    className,
+    autoWidth = false,
+    variant = 'default',
+  } = props
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
   const t = useCallback((de: string, en: string) => tx(language, de, en), [language])
-  const MAX_SWITCHER_WIDTH = 340
-  const MIN_SWITCHER_WIDTH = 132
+  const maxSwitcherWidth = 340
+  const minSwitcherWidth = 132
 
   const switcherWidth = useMemo(() => {
-    if (typeof document === 'undefined') {
+    if (typeof document === 'undefined' || variant === 'avatar') {
       return undefined
     }
     const fallbackName = activeProfile?.onboardingCompleted ? activeProfile.name : t('Neues Profil', 'New profile')
@@ -41,9 +55,11 @@ export function ProfileSwitcher(props: ProfileSwitcherProps): JSX.Element {
     context.font = `${bodyStyle.fontWeight} ${bodyStyle.fontSize} ${bodyStyle.fontFamily}`
     const maxTextWidth = names.reduce((max, name) => Math.max(max, context.measureText(name).width), 0)
     const controlChromeWidth = 66
-    return Math.min(MAX_SWITCHER_WIDTH, Math.max(MIN_SWITCHER_WIDTH, Math.ceil(maxTextWidth + controlChromeWidth)))
-  }, [activeProfile, t])
+    return Math.min(maxSwitcherWidth, Math.max(minSwitcherWidth, Math.ceil(maxTextWidth + controlChromeWidth)))
+  }, [activeProfile, t, variant])
+
   const hasPendingProfile = useMemo(() => profiles.some((profile) => !profile.onboardingCompleted), [profiles])
+  const otherProfiles = useMemo(() => profiles.filter((profile) => profile.id !== activeProfileId), [activeProfileId, profiles])
 
   useEffect(() => {
     if (!menuOpen) {
@@ -75,7 +91,7 @@ export function ProfileSwitcher(props: ProfileSwitcherProps): JSX.Element {
     >
       <button
         type="button"
-        className="profile-switcher-trigger"
+        className={`profile-switcher-trigger ${variant === 'avatar' ? 'profile-switcher-trigger-avatar' : ''}`.trim()}
         onClick={() => setMenuOpen((current) => !current)}
         aria-label={t('Profil wechseln', 'Switch profile')}
         aria-haspopup="listbox"
@@ -84,23 +100,38 @@ export function ProfileSwitcher(props: ProfileSwitcherProps): JSX.Element {
       >
         {activeProfile ? (
           activeProfile.onboardingCompleted ? (
-            <ProfileAvatar profile={activeProfile} size={28} />
+            <ProfileAvatar profile={activeProfile} size={variant === 'avatar' ? 44 : 28} />
           ) : (
             <span className="profile-switcher-plus" aria-hidden="true">
               +
             </span>
           )
         ) : null}
-        <span className="profile-switcher-name">
-          {activeProfile?.onboardingCompleted ? activeProfile.name : t('Neues Profil', 'New profile')}
-        </span>
-        <span className="profile-switcher-caret" aria-hidden="true">
-          ▾
-        </span>
+        {variant === 'default' ? (
+          <>
+            <span className="profile-switcher-name">
+              {activeProfile?.onboardingCompleted ? activeProfile.name : t('Neues Profil', 'New profile')}
+            </span>
+            <span className="profile-switcher-caret" aria-hidden="true" />
+          </>
+        ) : null}
       </button>
       {menuOpen ? (
-        <div className="profile-switcher-menu" role="listbox" aria-label={t('Profile', 'Profiles')}>
-          {profiles.map((profile) => {
+        <div
+          className={`profile-switcher-menu ${variant === 'avatar' ? 'profile-switcher-menu-avatar' : ''}`.trim()}
+          role="listbox"
+          aria-label={t('Profile', 'Profiles')}
+        >
+          {variant === 'avatar' && activeProfile ? (
+            <div className="profile-switcher-active-profile">
+              <ProfileAvatar profile={activeProfile} size={56} />
+              <div className="profile-switcher-active-copy">
+                <strong>{activeProfile.name}</strong>
+              </div>
+            </div>
+          ) : null}
+
+          {(variant === 'avatar' ? otherProfiles : profiles).map((profile) => {
             const selected = profile.id === activeProfileId
             const isPendingProfile = !profile.onboardingCompleted
             return (
@@ -126,6 +157,7 @@ export function ProfileSwitcher(props: ProfileSwitcherProps): JSX.Element {
               </button>
             )
           })}
+
           {onCreateProfile && !hasPendingProfile ? (
             <button
               type="button"
@@ -141,6 +173,22 @@ export function ProfileSwitcher(props: ProfileSwitcherProps): JSX.Element {
               <span className="profile-switcher-option-name">{t('Neues Profil', 'New profile')}</span>
             </button>
           ) : null}
+
+          {onOpenSettings || onLockProfile ? <div className="profile-switcher-divider" aria-hidden="true" /> : null}
+
+          {onOpenSettings ? (
+            <button
+              type="button"
+              className="profile-switcher-option profile-switcher-option-settings"
+              onClick={() => {
+                setMenuOpen(false)
+                onOpenSettings()
+              }}
+            >
+              <span className="profile-switcher-option-name">{t('Einstellungen', 'Settings')}</span>
+            </button>
+          ) : null}
+
           {onLockProfile ? (
             <button
               type="button"
@@ -150,9 +198,6 @@ export function ProfileSwitcher(props: ProfileSwitcherProps): JSX.Element {
                 onLockProfile()
               }}
             >
-              <span className="profile-switcher-logout" aria-hidden="true">
-                ↩
-              </span>
               <span className="profile-switcher-option-name">{t('Abmelden', 'Log out')}</span>
             </button>
           ) : null}

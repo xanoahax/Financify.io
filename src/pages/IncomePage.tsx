@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { AnimatedNumber } from '../components/AnimatedNumber'
 import { BarChart } from '../components/BarChart'
 import { DonutChart } from '../components/DonutChart'
 import { LineChart } from '../components/LineChart'
+import { useCardRowStagger } from '../hooks/useCardRowStagger'
 import { useGuardedBackdropClose } from '../hooks/useGuardedBackdropClose'
 import { useAppContext } from '../state/useAppContext'
 import type { IncomeEntry } from '../types/models'
@@ -29,6 +31,7 @@ interface IncomeDeleteConfirmState {
 }
 
 type ChangeScope = 'retroactive' | 'from-date'
+type IncomeTrendRange = 3 | 6 | 12
 
 interface PendingIncomeUpdateState {
   id: string
@@ -130,7 +133,7 @@ function buildDefaultShiftForm(defaultJobId: string): ShiftLogFormState {
 }
 
 export function IncomePage(): JSX.Element {
-  const { incomeEntries, settings, uiState, setUiState, addIncomeEntry, updateIncomeEntry, deleteIncomeEntry } = useAppContext()
+  const { incomeEntries, settings, addIncomeEntry, updateIncomeEntry, deleteIncomeEntry } = useAppContext()
   const shiftJobs = settings.shiftJobs.filter((job) => job.employmentType === 'casual')
   const fixedSalaryTemplateEntries = useMemo(() => buildFixedSalaryIncomeTemplateEntries(settings.shiftJobs), [settings.shiftJobs])
   const analyticEntries = useMemo(() => [...incomeEntries, ...fixedSalaryTemplateEntries], [fixedSalaryTemplateEntries, incomeEntries])
@@ -146,16 +149,22 @@ export function IncomePage(): JSX.Element {
   const [viewMode, setViewMode] = useState<'month' | 'year'>('month')
   const [selectedMonth, setSelectedMonth] = useState(() => monthKey(todayString()))
   const [selectedYear, setSelectedYear] = useState(() => todayString().slice(0, 4))
-  const [sourceFilter, setSourceFilter] = useState('all')
+  const [entrySearchQuery, setEntrySearchQuery] = useState('')
+  const [trendRange, setTrendRange] = useState<IncomeTrendRange>(6)
   const [formError, setFormError] = useState('')
   const [confirmDelete, setConfirmDelete] = useState<IncomeDeleteConfirmState | null>(null)
   const [pendingIncomeUpdate, setPendingIncomeUpdate] = useState<PendingIncomeUpdateState | null>(null)
+  const [quickActionsOpen, setQuickActionsOpen] = useState(false)
   const amountInputRef = useRef<HTMLInputElement | null>(null)
   const dateInputRef = useRef<HTMLInputElement | null>(null)
   const shiftDateInputRef = useRef<HTMLInputElement | null>(null)
-  const t = (de: string, en: string) => tx(settings.language, de, en)
+  const quickActionsRef = useRef<HTMLDivElement | null>(null)
+  const pageRef = useRef<HTMLElement | null>(null)
+  const t = useCallback((de: string, en: string) => tx(settings.language, de, en), [settings.language])
   const monthLocale = settings.language === 'de' ? 'de-DE' : 'en-US'
   const currencySymbol = getCurrencySymbol(settings.currency)
+
+  useCardRowStagger(pageRef)
   const existingManualSources = useMemo(() => {
     const unique = new Set<string>()
     for (const entry of incomeEntries) {
@@ -210,25 +219,33 @@ export function IncomePage(): JSX.Element {
   const pendingIncomeUpdateBackdropCloseGuard = useGuardedBackdropClose(closePendingIncomeUpdate)
 
   useEffect(() => {
-    if (searchParams.get('quickAdd') !== '1') {
+    const quickAdd = searchParams.get('quickAdd')
+    if (quickAdd !== '1' && quickAdd !== 'income' && quickAdd !== 'shift') {
       return
     }
+    const nextMode: IncomeFormMode = quickAdd === 'shift' ? 'job-shift' : 'manual'
     const frame = window.requestAnimationFrame(() => {
       setIsFormOpen(true)
       setEditId(null)
-      setFormMode('manual')
+      setFormMode(nextMode)
       setForm(buildDefaultForm(tx(settings.language, 'Gehalt', 'Salary')))
       setEffectiveFromDate(todayString())
       setShiftForm(buildDefaultShiftForm(resolvedDefaultShiftJobId))
       setTagInput('')
       setFormError('')
-      window.requestAnimationFrame(() => amountInputRef.current?.focus())
+      window.requestAnimationFrame(() => {
+        if (nextMode === 'job-shift') {
+          shiftDateInputRef.current?.focus()
+          return
+        }
+        amountInputRef.current?.focus()
+      })
       const nextParams = new URLSearchParams(searchParams)
       nextParams.delete('quickAdd')
       setSearchParams(nextParams, { replace: true })
     })
     return () => window.cancelAnimationFrame(frame)
-  }, [resolvedDefaultShiftJobId, searchParams, setSearchParams, settings.language])
+  }, [resolvedDefaultShiftJobId, searchParams, setSearchParams, settings.language, t])
 
   useEffect(() => {
     if (!isFormOpen && !confirmDelete) {
@@ -252,6 +269,28 @@ export function IncomePage(): JSX.Element {
     return () => window.removeEventListener('keydown', onEscape)
   }, [closeForm, confirmDelete, isFormOpen, pendingIncomeUpdate])
 
+  useEffect(() => {
+    if (!quickActionsOpen) {
+      return
+    }
+    function onDocumentMouseDown(event: MouseEvent): void {
+      if (!quickActionsRef.current?.contains(event.target as Node)) {
+        setQuickActionsOpen(false)
+      }
+    }
+    function onDocumentKeyDown(event: KeyboardEvent): void {
+      if (event.key === 'Escape') {
+        setQuickActionsOpen(false)
+      }
+    }
+    window.addEventListener('mousedown', onDocumentMouseDown)
+    window.addEventListener('keydown', onDocumentKeyDown)
+    return () => {
+      window.removeEventListener('mousedown', onDocumentMouseDown)
+      window.removeEventListener('keydown', onDocumentKeyDown)
+    }
+  }, [quickActionsOpen])
+
   const hasRecurringImpactChange = useCallback((existing: IncomeEntry, payload: IncomeFormState): boolean => {
     return (
       payload.amount !== existing.amount ||
@@ -268,10 +307,6 @@ export function IncomePage(): JSX.Element {
   const selectedYearStartDate = `${effectiveSelectedYear}-01-01`
   const selectedYearEndDate = endOfYear(selectedYearStartDate)
   const isSelectedYearCurrent = effectiveSelectedYear === String(currentYearNumber)
-  const sources = useMemo(
-    () => [...new Set(analyticEntries.map((item) => incomeSourceLabel(item, settings.language)))],
-    [analyticEntries, settings.language],
-  )
   const selectableYears = useMemo(() => {
     const years = new Set<number>()
     for (const entry of analyticEntries) {
@@ -306,21 +341,8 @@ export function IncomePage(): JSX.Element {
   }, [selectableYears, selectedYear])
 
   const sourceAndQueryFiltered = useMemo(() => {
-    const query = uiState.globalSearch.trim().toLowerCase()
     return analyticEntries
-      .filter((item) => {
-        const sourceLabel = incomeSourceLabel(item, settings.language)
-        return sourceFilter === 'all' ? true : sourceLabel === sourceFilter
-      })
-      .filter((item) => {
-        if (!query) {
-          return true
-        }
-        const sourceLabel = incomeSourceLabel(item, settings.language)
-        const text = `${sourceLabel} ${item.source} ${item.notes} ${item.tags.join(' ')}`.toLowerCase()
-        return text.includes(query)
-      })
-  }, [analyticEntries, settings.language, sourceFilter, uiState.globalSearch])
+  }, [analyticEntries])
 
   const periodRange = useMemo(
     () =>
@@ -330,34 +352,30 @@ export function IncomePage(): JSX.Element {
     [selectedMonthDate, selectedYearStartDate, viewMode],
   )
 
-  const tableSourceAndQueryFiltered = useMemo(() => {
-    const query = uiState.globalSearch.trim().toLowerCase()
-    return incomeEntries
+  const tableEntries = useMemo(() => {
+    const normalizedQuery = entrySearchQuery.trim().toLowerCase()
+
+    return [...incomeEntries]
       .filter((item) => {
-        const sourceLabel = incomeSourceLabel(item, settings.language)
-        return sourceFilter === 'all' ? true : sourceLabel === sourceFilter
-      })
-      .filter((item) => {
-        if (!query) {
+        if (!normalizedQuery) {
           return true
         }
-        const sourceLabel = incomeSourceLabel(item, settings.language)
-        const text = `${sourceLabel} ${item.source} ${item.notes} ${item.tags.join(' ')}`.toLowerCase()
-        return text.includes(query)
+
+        const searchableText = [
+          formatDateByPattern(item.date, settings.dateFormat),
+          incomeSourceLabel(item, settings.language),
+          item.recurring === 'none' ? t('Einmalig', 'One-time') : t('Wiederkehrend', 'Recurring'),
+          item.notes,
+          item.tags.join(' '),
+          formatMoney(item.amount, settings.currency, settings.privacyHideAmounts),
+        ]
+          .join(' ')
+          .toLowerCase()
+
+        return searchableText.includes(normalizedQuery)
       })
-  }, [incomeEntries, settings.language, sourceFilter, uiState.globalSearch])
-
-  const tablePeriodRange = useMemo(
-    () =>
-      viewMode === 'month'
-        ? { start: startOfMonth(selectedMonthDate), end: endOfMonth(selectedMonthDate) }
-        : { start: startOfYear(selectedYearStartDate), end: endOfYear(selectedYearStartDate) },
-    [selectedMonthDate, selectedYearStartDate, viewMode],
-  )
-
-  const tableEntries = useMemo(() => {
-    return materializeIncomeEntriesForRange(tableSourceAndQueryFiltered, tablePeriodRange.start, tablePeriodRange.end)
-  }, [tablePeriodRange.end, tablePeriodRange.start, tableSourceAndQueryFiltered])
+      .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))
+  }, [entrySearchQuery, incomeEntries, settings.currency, settings.dateFormat, settings.language, settings.privacyHideAmounts, t])
 
   const resolvedPeriodEntries = useMemo(
     () => materializeIncomeEntriesForRange(sourceAndQueryFiltered, periodRange.start, periodRange.end),
@@ -397,6 +415,12 @@ export function IncomePage(): JSX.Element {
     }
   }, [isSelectedYearCurrent, monthLocale, resolvedPeriodEntries, rollingYearEntries, selectedYearForecastEntries, selectedYearToDateEntries, settings.language, viewMode])
   const selectedMonthLabel = useMemo(() => monthLabel(selectedMonth, monthLocale), [monthLocale, selectedMonth])
+  const trendRangeOptions: Array<{ value: IncomeTrendRange; label: string }> = [
+    { value: 3, label: t('3 Monate', '3 months') },
+    { value: 6, label: t('6 Monate', '6 months') },
+    { value: 12, label: t('12 Monate', '12 months') },
+  ]
+  const filteredTrendSeries = useMemo(() => stats.monthSeries.slice(-trendRange), [stats.monthSeries, trendRange])
 
   const shiftHourlyRate = useMemo(() => {
     const rate = Number(selectedShiftJob?.hourlyRate)
@@ -446,7 +470,7 @@ export function IncomePage(): JSX.Element {
           source: selectedShiftJob.name,
           tags: [selectedShiftJob.name, t('Dienst', 'Shift')],
           notes: t(
-            `Dienst ${shiftForm.startTime}-${shiftForm.endTime}${result.crossesMidnight ? ' (über Mitternacht)' : ''}`,
+            `Dienst ${shiftForm.startTime}-${shiftForm.endTime}${result.crossesMidnight ? ' (Ã¼ber Mitternacht)' : ''}`,
             `Shift ${shiftForm.startTime}-${shiftForm.endTime}${result.crossesMidnight ? ' (overnight)' : ''}`,
           ),
           recurring: 'none',
@@ -555,30 +579,60 @@ export function IncomePage(): JSX.Element {
       await deleteIncomeEntry(confirmDelete.id)
       setConfirmDelete(null)
     } catch (error) {
-      setFormError(error instanceof Error ? error.message : t('Einkommenseintrag konnte nicht gelöscht werden.', 'Income entry could not be deleted.'))
+      setFormError(error instanceof Error ? error.message : t('Einkommenseintrag konnte nicht gelÃ¶scht werden.', 'Income entry could not be deleted.'))
       setConfirmDelete(null)
     }
   }
 
   return (
-    <section className="page">
-      <header className="page-header">
+    <section ref={pageRef} className="page">
+      <section className="page-top-row">
+      <header className="page-header page-header-compact">
         <div className="page-title-actions">
           <h1>{t('Einkommen', 'Income')}</h1>
-          <button type="button" className="button button-primary" onClick={() => openAddForm('manual')}>
-            {t('Einkommen hinzufügen', 'Add income')}
-          </button>
-          <button
-            type="button"
-            className="button button-secondary"
-            onClick={() => openAddForm('job-shift')}
-            disabled={shiftJobs.length === 0}
-            title={shiftJobs.length === 0 ? t('Bitte zuerst einen fallweisen Job in Einstellungen anlegen.', 'Please add a casual job in settings first.') : undefined}
-          >
-            {t('Dienst loggen', 'Log shift')}
-          </button>
         </div>
         <div className="page-actions">
+          <div className="shell-plus-cluster" ref={quickActionsRef}>
+            <button
+              type="button"
+              className="shell-plus-button"
+              onClick={() => setQuickActionsOpen((current) => !current)}
+              aria-label={t('Schnell hinzufügen', 'Quick add')}
+              aria-expanded={quickActionsOpen}
+              aria-haspopup="menu"
+              title={t('Schnell hinzufügen', 'Quick add')}
+            >
+              +
+            </button>
+            {quickActionsOpen ? (
+              <div className="shell-plus-menu" role="menu" aria-label={t('Schnellaktionen', 'Quick actions')}>
+                <button
+                  type="button"
+                  className="shell-plus-menu-item"
+                  role="menuitem"
+                  onClick={() => {
+                    setQuickActionsOpen(false)
+                    openAddForm('manual')
+                  }}
+                >
+                  {t('Einkommen hinzufügen', 'Add income')}
+                </button>
+                <button
+                  type="button"
+                  className="shell-plus-menu-item"
+                  role="menuitem"
+                  disabled={shiftJobs.length === 0}
+                  title={shiftJobs.length === 0 ? t('Bitte zuerst einen fallweisen Job in Einstellungen anlegen.', 'Please add a casual job in settings first.') : undefined}
+                  onClick={() => {
+                    setQuickActionsOpen(false)
+                    openAddForm('job-shift')
+                  }}
+                >
+                  {t('Dienst loggen', 'Log shift')}
+                </button>
+              </div>
+            ) : null}
+          </div>
           <div className="segmented">
             <button type="button" className={viewMode === 'month' ? 'active' : ''} onClick={() => setViewMode('month')}>
               {t('Monat', 'Month')}
@@ -609,61 +663,68 @@ export function IncomePage(): JSX.Element {
               ))}
             </select>
           ) : null}
-          <input
-            value={uiState.globalSearch}
-            onChange={(event) => setUiState({ globalSearch: event.target.value })}
-            placeholder={t('Einkommen suchen...', 'Search income...')}
-            aria-label={t('Einkommen suchen', 'Search income')}
-          />
         </div>
       </header>
 
-      <div className="stats-grid">
+      <div className="stats-grid stats-grid-top">
         <article className="card stat-card">
           <p className="muted">
             {t('Einkommen gesamt', 'Total income')} ({viewMode === 'month' ? selectedMonthLabel : selectedYear})
           </p>
-          <p className="stat-value">{formatMoney(stats.total, settings.currency, settings.privacyHideAmounts)}</p>
-          {viewMode === 'year' && isSelectedYearCurrent ? (
+          <p className="stat-value"><AnimatedNumber value={stats.total} formatter={(value) => formatMoney(value, settings.currency, settings.privacyHideAmounts)} /></p>
+          {viewMode === 'year' ? (
             <p className="hint">
-              {t('Bis heute inkl. wiederkehrender Einträge. Forecast (Jahr):', 'Up to today incl. recurring entries. Forecast (year):')}{' '}
+              {t('Forecast:', 'Forecast:')}{' '}
               {formatMoney(stats.yearForecastTotal, settings.currency, settings.privacyHideAmounts)}
             </p>
-          ) : (
-            <p className="hint">{t('Enthält wiederkehrende Einträge im gewählten Zeitraum.', 'Includes recurring entries in the selected period.')}</p>
-          )}
+          ) : null}
         </article>
         <article className="card stat-card">
           <p className="muted">{t('Monatlicher Durchschnitt', 'Monthly average')}</p>
-          <p className="stat-value">{formatMoney(stats.aggregates.average, settings.currency, settings.privacyHideAmounts)}</p>
+          <p className="stat-value"><AnimatedNumber value={stats.aggregates.average} formatter={(value) => formatMoney(value, settings.currency, settings.privacyHideAmounts)} /></p>
         </article>
         <article className="card stat-card">
           <p className="muted">{t('Monatlicher Median', 'Monthly median')}</p>
-          <p className="stat-value">{formatMoney(stats.aggregates.median, settings.currency, settings.privacyHideAmounts)}</p>
+          <p className="stat-value"><AnimatedNumber value={stats.aggregates.median} formatter={(value) => formatMoney(value, settings.currency, settings.privacyHideAmounts)} /></p>
           <p className="hint">{t('Vgl. Vormonat', 'vs previous month')}: {toPercent(stats.mom)}</p>
         </article>
       </div>
+      </section>
 
       <div className="two-column two-column-equal">
         <article className="card">
           <header className="section-header">
-            <h2>{t('Quellenaufteilung', 'Source breakdown')}</h2>
-            <select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)}>
-              <option value="all">{t('Alle Quellen', 'All sources')}</option>
-              {sources.map((source) => (
-                <option value={source} key={source}>
-                  {source}
-                </option>
+            <h2>{t('Trend (12 Monate)', 'Trend (12 months)')}</h2>
+            <div className="segmented dashboard-range-filter" role="tablist" aria-label={t('Trend-Zeitraum', 'Trend range')}>
+              {trendRangeOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={trendRange === option.value ? 'active' : ''}
+                  role="tab"
+                  aria-selected={trendRange === option.value}
+                  onClick={() => setTrendRange(option.value)}
+                >
+                  {option.label}
+                </button>
               ))}
-            </select>
+            </div>
           </header>
-          <DonutChart data={stats.sourceSeries} language={settings.language} />
+          <LineChart
+            data={filteredTrendSeries}
+            language={settings.language}
+            valueFormatter={(value) => formatMoney(value, settings.currency, settings.privacyHideAmounts)}
+          />
         </article>
         <article className="card">
           <header className="section-header">
-            <h2>{t('Trend (12 Monate)', 'Trend (12 months)')}</h2>
+            <h2>{t('Quellenaufteilung', 'Source breakdown')}</h2>
           </header>
-          <LineChart data={stats.monthSeries} language={settings.language} />
+          <DonutChart
+            data={stats.sourceSeries}
+            language={settings.language}
+            valueFormatter={(value) => formatMoney(value, settings.currency, settings.privacyHideAmounts)}
+          />
         </article>
       </div>
 
@@ -677,9 +738,9 @@ export function IncomePage(): JSX.Element {
           <article className="card form-modal" onMouseDownCapture={formBackdropCloseGuard.onModalMouseDownCapture} onClick={(event) => event.stopPropagation()}>
             <header className="section-header">
               <h2>
-                {editId ? t('Einkommen bearbeiten', 'Edit income') : formMode === 'job-shift' ? t('Dienst loggen', 'Log shift') : t('Einkommen hinzufügen', 'Add income')}
+                {editId ? t('Einkommen bearbeiten', 'Edit income') : formMode === 'job-shift' ? t('Dienst loggen', 'Log shift') : t('Einkommen hinzufÃ¼gen', 'Add income')}
               </h2>
-              <button type="button" className="icon-button" onClick={closeForm} aria-label={t('Popup schließen', 'Close popup')}>
+              <button type="button" className="icon-button" onClick={closeForm} aria-label={t('Popup schlieÃen', 'Close popup')}>
                 x
               </button>
             </header>
@@ -744,12 +805,12 @@ export function IncomePage(): JSX.Element {
                     <small className="muted">{t('Stundensatz (netto)', 'Hourly rate (net)')}: {shiftHourlyRate} {currencySymbol}/h</small>
                     <strong>
                       {t('Berechnetes Einkommen', 'Calculated income')}:{' '}
-                      {shiftPreview ? formatMoney(shiftPreview.amount, settings.currency, settings.privacyHideAmounts) : '—'}
+                      {shiftPreview ? formatMoney(shiftPreview.amount, settings.currency, settings.privacyHideAmounts) : 'â'}
                     </strong>
                     <small className="muted">
                       {shiftPreview
-                        ? `${t('Dauer', 'Duration')}: ${formatDurationHours(shiftPreview.durationHours, settings.language)}${shiftPreview.crossesMidnight ? t(' (über Mitternacht)', ' (overnight)') : ''}`
-                        : t('Bitte gültige Start- und Endzeit eingeben.', 'Please enter valid start and end times.')}
+                        ? `${t('Dauer', 'Duration')}: ${formatDurationHours(shiftPreview.durationHours, settings.language)}${shiftPreview.crossesMidnight ? t(' (Ã¼ber Mitternacht)', ' (overnight)') : ''}`
+                        : t('Bitte gÃ¼ltige Start- und Endzeit eingeben.', 'Please enter valid start and end times.')}
                     </small>
                   </div>
                 </>
@@ -785,7 +846,7 @@ export function IncomePage(): JSX.Element {
                     {t('Wiederkehrend', 'Recurring')}
                     <select value={form.recurring} onChange={(event) => setForm((current) => ({ ...current, recurring: event.target.value as IncomeEntry['recurring'] }))}>
                       <option value="none">{t('Nein', 'No')}</option>
-                      <option value="weekly">{t('Wöchentlich', 'Weekly')}</option>
+                      <option value="weekly">{t('WÃ¶chentlich', 'Weekly')}</option>
                       <option value="monthly">{t('Monatlich', 'Monthly')}</option>
                       <option value="custom">{t('Eigene Tage', 'Custom days')}</option>
                     </select>
@@ -798,7 +859,7 @@ export function IncomePage(): JSX.Element {
                   ) : null}
                   {editId && form.recurring !== 'none' ? (
                     <label>
-                      {t('Änderung wirksam ab', 'Change effective from')}
+                      {t('Ãnderung wirksam ab', 'Change effective from')}
                       <input type="date" value={effectiveFromDate} onChange={(event) => setEffectiveFromDate(event.target.value)} required />
                     </label>
                   ) : null}
@@ -835,18 +896,18 @@ export function IncomePage(): JSX.Element {
         >
           <article className="card form-modal confirm-modal" onMouseDownCapture={confirmBackdropCloseGuard.onModalMouseDownCapture} onClick={(event) => event.stopPropagation()}>
             <header className="section-header">
-              <h2>{t('Einkommenseintrag löschen?', 'Delete income entry?')}</h2>
-              <button type="button" className="icon-button" onClick={closeConfirmDelete} aria-label={t('Popup schließen', 'Close popup')}>
+              <h2>{t('Einkommenseintrag lÃ¶schen?', 'Delete income entry?')}</h2>
+              <button type="button" className="icon-button" onClick={closeConfirmDelete} aria-label={t('Popup schlieÃen', 'Close popup')}>
                 x
               </button>
             </header>
             <p>
-              {t('Möchtest du den Eintrag', 'Do you really want to delete the entry')} "{confirmDelete.source}" {t('vom', 'from')}{' '}
-              {formatDateByPattern(confirmDelete.date, settings.dateFormat)} {t('wirklich löschen?', '?')}
+              {t('MÃ¶chtest du den Eintrag', 'Do you really want to delete the entry')} "{confirmDelete.source}" {t('vom', 'from')}{' '}
+              {formatDateByPattern(confirmDelete.date, settings.dateFormat)} {t('wirklich lÃ¶schen?', '?')}
             </p>
             <div className="form-actions">
               <button type="button" className="button button-danger" onClick={() => void handleDeleteConfirmed()}>
-                {t('Löschen', 'Delete')}
+                {t('LÃ¶schen', 'Delete')}
               </button>
               <button type="button" className="button button-secondary" onClick={closeConfirmDelete}>
                 {t('Abbrechen', 'Cancel')}
@@ -865,22 +926,22 @@ export function IncomePage(): JSX.Element {
         >
           <article className="card form-modal confirm-modal" onMouseDownCapture={pendingIncomeUpdateBackdropCloseGuard.onModalMouseDownCapture} onClick={(event) => event.stopPropagation()}>
             <header className="section-header">
-              <h2>{t('Änderung anwenden', 'Apply change')}</h2>
-              <button type="button" className="icon-button" onClick={closePendingIncomeUpdate} aria-label={t('Popup schließen', 'Close popup')}>
+              <h2>{t('Ãnderung anwenden', 'Apply change')}</h2>
+              <button type="button" className="icon-button" onClick={closePendingIncomeUpdate} aria-label={t('Popup schlieÃen', 'Close popup')}>
                 x
               </button>
             </header>
-            <p>{t('Soll die Änderung rückwirkend gelten oder erst ab einem bestimmten Datum?', 'Should this change apply retroactively or only from a specific date?')}</p>
+            <p>{t('Soll die Ãnderung rÃ¼ckwirkend gelten oder erst ab einem bestimmten Datum?', 'Should this change apply retroactively or only from a specific date?')}</p>
             <label>
               {t('Ab Datum', 'From date')}
               <input type="date" value={effectiveFromDate} onChange={(event) => setEffectiveFromDate(event.target.value)} required />
             </label>
             <div className="form-actions">
               <button type="button" className="button button-primary" onClick={() => void applyPendingIncomeUpdate('retroactive')}>
-                {t('Rückwirkend', 'Retroactive')}
+                {t('RÃ¼ckwirkend', 'Retroactive')}
               </button>
               <button type="button" className="button button-secondary" onClick={() => void applyPendingIncomeUpdate('from-date')}>
-                {t('Ab Datum übernehmen', 'Apply from date')}
+                {t('Ab Datum Ã¼bernehmen', 'Apply from date')}
               </button>
               <button type="button" className="button button-secondary" onClick={closePendingIncomeUpdate}>
                 {t('Abbrechen', 'Cancel')}
@@ -890,52 +951,72 @@ export function IncomePage(): JSX.Element {
         </div>
       ) : null}
 
-      <article className="card">
-        <header className="section-header">
-          <h2>{t('Einkommen pro Monat', 'Income per month')}</h2>
-        </header>
-        <BarChart data={stats.monthSeries} language={settings.language} />
-      </article>
+      <section className="dashboard-grid">
+        <article className="card dashboard-card dashboard-card-fit">
+          <header className="section-header">
+            <h2>{t('Einkommen pro Monat', 'Income per month')}</h2>
+          </header>
+          <BarChart data={stats.monthSeries} language={settings.language} />
+        </article>
 
-      <article className="card">
-        <header className="section-header">
-          <h2>{t('Einträge', 'Entries')}</h2>
-        </header>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>{t('Datum', 'Date')}</th>
-                <th>{t('Quelle', 'Source')}</th>
-                <th>{t('Betrag', 'Amount')}</th>
-                <th>{t('Tags', 'Tags')}</th>
-                <th>{t('Aktionen', 'Actions')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tableEntries.map((item) => (
-                <tr key={item.id}>
-                  <td>{formatDateByPattern(item.date, settings.dateFormat)}</td>
-                  <td>{incomeSourceLabel(item, settings.language)}</td>
-                  <td>{formatMoney(item.amount, settings.currency, settings.privacyHideAmounts)}</td>
-                  <td>{item.tags.join(', ') || '-'}</td>
-                  <td>
-                    <div className="row-actions">
-                      <button type="button" className="button button-tertiary" onClick={() => startEdit(item)}>
-                        {t('Bearbeiten', 'Edit')}
-                      </button>
-                      <button type="button" className="button button-danger" onClick={() => openDeleteConfirmation(item)}>
-                        {t('Löschen', 'Delete')}
-                      </button>
-                    </div>
-                  </td>
+        <article className="card dashboard-card dashboard-card-fit income-entries-card">
+          <header className="section-header">
+            <h2>{t('Eintr?ge', 'Entries')}</h2>
+            <div className="filters">
+              <input
+                type="search"
+                value={entrySearchQuery}
+                onChange={(event) => setEntrySearchQuery(event.target.value)}
+                placeholder={t('Eintr?ge durchsuchen', 'Search entries')}
+                aria-label={t('Eintr?ge durchsuchen', 'Search entries')}
+                className="entry-search-input"
+              />
+            </div>
+          </header>
+          <div className="table-wrap income-entries-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>{t('Datum', 'Date')}</th>
+                  <th>{t('Quelle', 'Source')}</th>
+                  <th>{t('Betrag', 'Amount')}</th>
+                  <th>{t('Typ', 'Type')}</th>
+                  <th>{t('Aktionen', 'Actions')}</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-          {tableEntries.length === 0 ? <p className="empty-inline table-empty-message">{t('Keine Einkommenseinträge für die ausgewählte Ansicht.', 'No income entries for the selected view.')}</p> : null}
-        </div>
-      </article>
+              </thead>
+              <tbody>
+                {tableEntries.map((item) => (
+                  <tr key={item.id}>
+                    <td>{formatDateByPattern(item.date, settings.dateFormat)}</td>
+                    <td>{incomeSourceLabel(item, settings.language)}</td>
+                    <td>{formatMoney(item.amount, settings.currency, settings.privacyHideAmounts)}</td>
+                    <td>{item.recurring === 'none' ? t('Einmalig', 'One-time') : t('Wiederkehrend', 'Recurring')}</td>
+                    <td>
+                      <div className="row-actions compact">
+                        <button type="button" className="icon-button entry-action-button" onClick={() => startEdit(item)} aria-label={t('Bearbeiten', 'Edit')} title={t('Bearbeiten', 'Edit')}>
+                          <svg viewBox="0 0 24 24" aria-hidden="true" className="entry-action-icon">
+                            <path d="M4 20h4l10-10-4-4L4 16v4Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+                            <path d="m12 6 4 4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+                          </svg>
+                        </button>
+                        <button type="button" className="icon-button entry-action-button entry-action-button-danger" onClick={() => openDeleteConfirmation(item)} aria-label={t('L?schen', 'Delete')} title={t('L?schen', 'Delete')}>
+                          <svg viewBox="0 0 24 24" aria-hidden="true" className="entry-action-icon">
+                            <path d="M6 7h12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                            <path d="M9 7V5h6v2" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+                            <path d="M8 7l1 12h6l1-12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+                            <path d="M10 11v5M14 11v5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                          </svg>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {tableEntries.length === 0 ? <p className="empty-inline table-empty-message">{t('Keine Einkommenseintr?ge f?r die aktuelle Auswahl.', 'No income entries for the current selection.')}</p> : null}
+          </div>
+        </article>
+      </section>
     </section>
   )
 }

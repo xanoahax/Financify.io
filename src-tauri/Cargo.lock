@@ -1052,9 +1052,7 @@ dependencies = [
  "libredox",
 ]
 
-[[package]]
-name = "financify-desktop"
-version = "0.9.61"
+$10.11.0"
 dependencies = [
  "log",
  "serde",
@@ -5985,3 +5983,5 @@ dependencies = [
  "syn 2.0.117",
  "winnow 0.7.14",
 ]
+
+

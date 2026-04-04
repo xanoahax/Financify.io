@@ -1,4 +1,4 @@
-export type ThemeMode = 'light' | 'dark' | 'glass' | 'high-contrast' | 'system'
+export type ThemeMode = 'light' | 'dark'
 export type AppLanguage = 'de' | 'en'
 
 export type SubscriptionInterval = 'monthly' | 'yearly' | 'four-weekly' | 'custom-months'
@@ -158,12 +158,6 @@ export interface InterestScenario {
 export interface Settings {
   language: AppLanguage
   theme: ThemeMode
-  accentColor: string
-  gradientOverlayEnabled: boolean
-  gradientColorA: string
-  gradientColorB: string
-  backgroundImageBlurEnabled: boolean
-  backgroundImageBlurAmount: number
   currency: 'EUR' | 'USD'
   shiftJobs: ShiftJobConfig[]
   defaultShiftJobId: string

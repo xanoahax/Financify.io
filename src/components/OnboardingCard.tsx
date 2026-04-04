@@ -248,9 +248,6 @@ export function OnboardingCard(props: OnboardingCardProps): JSX.Element {
               <select value={theme} onChange={(event) => setTheme(event.target.value as typeof theme)}>
                 <option value="light">{tx(language, 'Hell', 'Light')}</option>
                 <option value="dark">{tx(language, 'Dunkel', 'Dark')}</option>
-                <option value="glass">{tx(language, 'Glas', 'Glass')}</option>
-                <option value="high-contrast">{tx(language, 'Hoher Kontrast', 'High contrast')}</option>
-                <option value="system">{tx(language, 'System', 'System')}</option>
               </select>
             </label>
           </>

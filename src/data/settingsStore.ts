@@ -12,13 +12,7 @@ type SupportedCurrency = (typeof SUPPORTED_CURRENCIES)[number]
 
 export const defaultSettings: Settings = {
   language: 'de',
-  theme: 'high-contrast',
-  accentColor: '#00db04',
-  gradientOverlayEnabled: true,
-  gradientColorA: '#0aff33',
-  gradientColorB: '#149028',
-  backgroundImageBlurEnabled: false,
-  backgroundImageBlurAmount: 8,
+  theme: 'light',
   currency: 'EUR',
   shiftJobs: [],
   defaultShiftJobId: '',
@@ -189,6 +183,10 @@ function normalizeCurrency(raw: unknown): SupportedCurrency {
   return SUPPORTED_CURRENCIES.includes(upper as SupportedCurrency) ? (upper as SupportedCurrency) : defaultSettings.currency
 }
 
+function normalizeTheme(raw: unknown): Settings['theme'] {
+  return raw === 'light' ? 'light' : 'dark'
+}
+
 export function loadSettings(profileId: string): Settings {
   const parsed = parseJson<Record<string, unknown>>(
     window.localStorage.getItem(getSettingsStorageKey(profileId)),
@@ -202,11 +200,17 @@ export function loadSettings(profileId: string): Settings {
       : casualJobs[0]?.id ?? ''
 
   return {
-    ...defaultSettings,
-    ...parsed,
+    language: parsed.language === 'en' ? 'en' : defaultSettings.language,
+    theme: normalizeTheme(parsed.theme),
     currency: normalizeCurrency(parsed.currency),
     shiftJobs,
     defaultShiftJobId,
+    dateFormat:
+      parsed.dateFormat === 'MM/DD/YYYY' || parsed.dateFormat === 'YYYY-MM-DD'
+        ? parsed.dateFormat
+        : defaultSettings.dateFormat,
+    startOfWeek: parsed.startOfWeek === 'sunday' ? 'sunday' : defaultSettings.startOfWeek,
+    privacyHideAmounts: Boolean(parsed.privacyHideAmounts),
   }
 }
 

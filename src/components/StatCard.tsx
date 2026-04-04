@@ -2,7 +2,7 @@
 
 interface StatCardProps {
   label: string
-  value: string
+  value: ReactNode
   hint?: string
   action?: ReactNode
 }
@@ -19,4 +19,3 @@ export function StatCard({ label, value, hint, action }: StatCardProps): JSX.Ele
     </article>
   )
 }
-

@@ -1,16 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+﻿import { useCallback, useEffect, useMemo, useState } from 'react'
 import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { BackgroundLayers } from './components/BackgroundLayers'
-import { CommandPalette, type PaletteAction } from './components/CommandPalette'
 import { LoginScreen } from './components/LoginScreen'
 import { OnboardingCard } from './components/OnboardingCard'
 import { ProfileSwitcher } from './components/ProfileSwitcher'
-import { QuickAddFab } from './components/QuickAddFab'
 import { ToastHost } from './components/ToastHost'
 import { useDocumentAppearance } from './hooks/useDocumentAppearance'
 import { useGuardedBackdropClose } from './hooks/useGuardedBackdropClose'
 import { useLockScreenVisuals } from './hooks/useLockScreenVisuals'
-import { DashboardPage } from './pages/DashboardPage'
+import { DashboardPage, type DashboardQuickAction } from './pages/DashboardPage'
 import { HouseholdsPage } from './pages/HouseholdsPage'
 import { IncomePage } from './pages/IncomePage'
 import { SettingsPage } from './pages/SettingsPage'
@@ -20,7 +18,20 @@ import { useAppContext } from './state/useAppContext'
 import type { OnboardingSetupInput } from './state/AppContext'
 import { tx } from './utils/i18n'
 import { isGitHubPagesRuntime } from './utils/runtime'
-import { resolveTheme } from './utils/theme'
+import dashboardIconDark from '../redesign_icons/dashboard_dark.png'
+import dashboardIconLight from '../redesign_icons/dashboard_light.png'
+import houseIconDark from '../redesign_icons/house_dark.png'
+import houseIconLight from '../redesign_icons/house_light.png'
+import incomeIconDark from '../redesign_icons/income_dark.png'
+import incomeIconLight from '../redesign_icons/income_light.png'
+import logoutIconDark from '../redesign_icons/logout_dark.png'
+import logoutIconLight from '../redesign_icons/logout_light.png'
+import logoForLightMode from '../redesign_icons/mainlogo_dark.png'
+import logoForDarkMode from '../redesign_icons/mainlogo_light.png'
+import statsIconDark from '../redesign_icons/stats_dark.png'
+import statsIconLight from '../redesign_icons/stats_light.png'
+import subsIconDark from '../redesign_icons/subs_dark.png'
+import subsIconLight from '../redesign_icons/subs_light.png'
 
 let startupUpdateCheckTriggered = false
 const DESKTOP_RELEASES_URL = 'https://github.com/xanoahax/Financify.io/releases'
@@ -29,9 +40,7 @@ export default function App(): JSX.Element {
   const {
     loading,
     settings,
-    backgroundImageDataUrl,
-    uiState,
-    setUiState,
+    setSettings,
     profiles,
     activeProfileId,
     activeProfile,
@@ -55,7 +64,6 @@ export default function App(): JSX.Element {
     isInstallingUpdate,
     updateCheckError,
   } = useAppContext()
-  const [paletteOpen, setPaletteOpen] = useState(false)
   const [showDesktopDownloadHint, setShowDesktopDownloadHint] = useState(() => isGitHubPagesRuntime())
   const [isSessionLoggedOut, setIsSessionLoggedOut] = useState(true)
   const [unlockSecret, setUnlockSecret] = useState('')
@@ -63,15 +71,17 @@ export default function App(): JSX.Element {
   const [unlocking, setUnlocking] = useState(false)
   const navigate = useNavigate()
   const showLoginScreen = isProfileLocked || isSessionLoggedOut
-  const { effectiveSettings, effectiveBackgroundImageDataUrl, captureCurrentVisualSnapshot, clearCurrentVisualSnapshot } = useLockScreenVisuals({
+  const { effectiveSettings, captureCurrentVisualSnapshot, clearCurrentVisualSnapshot } = useLockScreenVisuals({
     settings,
-    backgroundImageDataUrl,
     isProfileLocked: showLoginScreen,
   })
   const language = effectiveSettings.language
-  const t = (de: string, en: string) => tx(language, de, en)
+  const t = useCallback((de: string, en: string) => tx(language, de, en), [language])
+  const shellLogo = settings.theme === 'dark' ? logoForDarkMode : logoForLightMode
+  const logoutIcon = settings.theme === 'dark' ? logoutIconLight : logoutIconDark
+  const nextTheme = settings.theme === 'dark' ? 'light' : 'dark'
   const applyThemePreview = useCallback((theme: OnboardingSetupInput['theme']) => {
-    document.documentElement.dataset.theme = resolveTheme(theme)
+    document.documentElement.dataset.theme = theme
   }, [])
   const closeDesktopDownloadHint = useCallback(() => setShowDesktopDownloadHint(false), [])
   const desktopDownloadHintBackdropCloseGuard = useGuardedBackdropClose(closeDesktopDownloadHint)
@@ -82,7 +92,6 @@ export default function App(): JSX.Element {
   }, [])
   const handleProfileSwitch = useCallback(
     (profileId: string) => {
-      // Keep login visuals on the profile we switch away from.
       captureCurrentVisualSnapshot()
       resetUnlockState()
       switchProfile(profileId)
@@ -91,7 +100,6 @@ export default function App(): JSX.Element {
   )
   const handleLockedProfileSelect = useCallback(
     (profileId: string) => {
-      // While locked, keep the existing login visual snapshot untouched.
       const selectedProfile = profiles.find((profile) => profile.id === profileId)
       resetUnlockState()
       switchProfile(profileId)
@@ -103,7 +111,6 @@ export default function App(): JSX.Element {
     [clearCurrentVisualSnapshot, profiles, resetUnlockState, switchProfile],
   )
   const handleLockProfile = useCallback(() => {
-    // Preserve current visual state for the lock screen.
     captureCurrentVisualSnapshot()
     setIsSessionLoggedOut(true)
     lockActiveProfile()
@@ -120,13 +127,13 @@ export default function App(): JSX.Element {
   })
 
   const navItems = [
-    { to: '/dashboard', label: t('\u00dcbersicht', 'Overview'), icon: '\u2302' },
-    { to: '/income', label: t('Einkommen', 'Income'), icon: '\u20ac' },
-    { to: '/subscriptions', label: t('Abo-Tracker', 'Subscription Tracker'), icon: '\u21bb' },
-    { to: '/households', label: t('Haushaltskosten', 'Household costs'), icon: '🏠' },
-    { to: '/stats', label: t('Statistiken', 'Statistics'), icon: '\u2197' },
-    { to: '/settings', label: t('Einstellungen', 'Settings'), icon: '\u2699', isSettings: true },
+    { to: '/dashboard', label: t('Übersicht', 'Overview'), iconDark: dashboardIconDark, iconLight: dashboardIconLight },
+    { to: '/income', label: t('Einkommen', 'Income'), iconDark: incomeIconDark, iconLight: incomeIconLight },
+    { to: '/subscriptions', label: t('Abo-Tracker', 'Subscription tracker'), iconDark: subsIconDark, iconLight: subsIconLight },
+    { to: '/households', label: t('Haushaltskosten', 'Household costs'), iconDark: houseIconDark, iconLight: houseIconLight },
+    { to: '/stats', label: t('Statistiken', 'Statistics'), iconDark: statsIconDark, iconLight: statsIconLight },
   ]
+
   const selectableProfiles = useMemo(() => {
     const completed = profiles.filter((profile) => profile.onboardingCompleted)
     const base = completed
@@ -138,26 +145,6 @@ export default function App(): JSX.Element {
     }
     return base
   }, [activeProfileId, profiles])
-  useEffect(() => {
-    function onShortcut(event: KeyboardEvent): void {
-      if (showLoginScreen) {
-        return
-      }
-      const isPaletteShortcut = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k'
-      if (isPaletteShortcut) {
-        event.preventDefault()
-        setPaletteOpen((current) => !current)
-      }
-    }
-    window.addEventListener('keydown', onShortcut)
-    return () => window.removeEventListener('keydown', onShortcut)
-  }, [showLoginScreen])
-
-  useEffect(() => {
-    if (showLoginScreen) {
-      setPaletteOpen(false)
-    }
-  }, [showLoginScreen])
 
   useEffect(() => {
     if (!updatesSupported || loading || startupUpdateCheckTriggered) {
@@ -167,41 +154,16 @@ export default function App(): JSX.Element {
     void checkForUpdates()
   }, [checkForUpdates, loading, updatesSupported])
 
-  const paletteActions: PaletteAction[] = [
-    {
-      id: 'add-subscription',
-      label: t('Abo hinzufügen', 'Add subscription'),
-      description: t('Formular öffnen und auf Abo-Name fokussieren', 'Open form and focus subscription name'),
-      run: () => navigate('/subscriptions?quickAdd=1'),
-    },
-    {
-      id: 'add-income',
-      label: t('Einkommen hinzufügen', 'Add income'),
-      description: t('Formular öffnen und auf Betragsfeld fokussieren', 'Open form and focus amount field'),
-      run: () => navigate('/income?quickAdd=1'),
-    },
-    { id: 'go-dashboard', label: t('Übersicht öffnen', 'Open overview'), description: t('Zur Gesamtübersicht springen', 'Jump to overall overview'), run: () => navigate('/dashboard') },
-    { id: 'go-subs', label: t('Abo-Tracker öffnen', 'Open subscription tracker'), description: t('Wiederkehrende Kosten verwalten', 'Manage recurring costs'), run: () => navigate('/subscriptions') },
-    { id: 'go-households', label: t('Haushaltskosten öffnen', 'Open household costs'), description: t('Haushalt, Bewohner und Fixkosten verwalten', 'Manage households, residents, and fixed costs'), run: () => navigate('/households') },
-    { id: 'go-income', label: t('Einkommen öffnen', 'Open income'), description: t('Einkommenseinträge verwalten', 'Manage income entries'), run: () => navigate('/income') },
-    { id: 'go-stats', label: t('Statistiken öffnen', 'Open statistics'), description: t('Trends und Cashflow prüfen', 'Review trends and cashflow'), run: () => navigate('/stats') },
-    { id: 'go-settings', label: t('Einstellungen öffnen', 'Open settings'), description: t('Präferenzen anpassen', 'Adjust preferences'), run: () => navigate('/settings') },
-    { id: 'toggle-privacy', label: t('Beträge ausblenden', 'Hide amounts'), description: t('Privatsphäre-Modus in Einstellungen umschalten', 'Toggle privacy mode in settings'), run: () => navigate('/settings') },
-  ]
-
-  const backgroundStyle = useMemo(() => {
-    if (!effectiveBackgroundImageDataUrl) {
-      return undefined
-    }
-    return {
-      backgroundImage: `url(${effectiveBackgroundImageDataUrl})`,
-      filter: effectiveSettings.backgroundImageBlurEnabled ? `blur(${effectiveSettings.backgroundImageBlurAmount}px)` : 'none',
-    }
-  }, [
-    effectiveBackgroundImageDataUrl,
-    effectiveSettings.backgroundImageBlurAmount,
-    effectiveSettings.backgroundImageBlurEnabled,
-  ])
+  const dashboardQuickActions: DashboardQuickAction[] = useMemo(
+    () => [
+      { id: 'dash-income', label: t('Einkommen hinzufügen', 'Add income'), run: () => navigate('/income?quickAdd=income') },
+      { id: 'dash-shift', label: t('Dienst loggen', 'Log shift'), run: () => navigate('/income?quickAdd=shift') },
+      { id: 'dash-subscription', label: t('Abo hinzufügen', 'Add subscription'), run: () => navigate('/subscriptions?quickAdd=subscription') },
+      { id: 'dash-household-cost', label: t('Haushaltskosten hinzufügen', 'Add household cost'), run: () => navigate('/households?quickAdd=cost') },
+      { id: 'dash-household', label: t('Haushalt hinzufügen', 'Add household'), run: () => navigate('/households?quickAdd=household') },
+    ],
+    [navigate, t],
+  )
 
   async function onUnlockSubmit(event: React.FormEvent): Promise<void> {
     event.preventDefault()
@@ -233,7 +195,7 @@ export default function App(): JSX.Element {
   if (needsOnboarding) {
     return (
       <>
-        <BackgroundLayers imageStyle={backgroundStyle} />
+        <BackgroundLayers />
         <main className="loading-shell">
           <OnboardingCard
             key={activeProfileId}
@@ -258,11 +220,12 @@ export default function App(): JSX.Element {
   if (showLoginScreen) {
     return (
       <>
-        <BackgroundLayers imageStyle={backgroundStyle} />
+        <BackgroundLayers />
         <LoginScreen
           profiles={profiles}
           activeProfileId={activeProfileId}
           activeProfile={activeProfile}
+          logoSrc={shellLogo}
           language={language}
           unlockSecret={unlockSecret}
           unlockError={unlockError}
@@ -279,21 +242,14 @@ export default function App(): JSX.Element {
 
   return (
     <>
-      <BackgroundLayers imageStyle={backgroundStyle} />
+      <BackgroundLayers />
 
-      <div className={`app-shell ${uiState.sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
-        <aside className="sidebar">
-          <header>
-            <strong>financify</strong>
-            <button
-              type="button"
-              className="icon-button"
-              onClick={() => setUiState({ sidebarCollapsed: !uiState.sidebarCollapsed })}
-              aria-label={t('Seitenleiste umschalten', 'Toggle sidebar')}
-            >
-              {uiState.sidebarCollapsed ? '>' : '<'}
-            </button>
-          </header>
+      <div className="app-shell">
+        <div className="shell-brand" aria-hidden="true">
+          <img className="shell-app-logo" src={shellLogo} alt="" />
+        </div>
+
+        <aside className="sidebar" aria-label={t('Hauptnavigation', 'Main navigation')}>
           <nav>
             {navItems.map((item) => (
               <NavLink
@@ -301,60 +257,59 @@ export default function App(): JSX.Element {
                 to={item.to}
                 title={item.label}
                 aria-label={item.label}
-                className={({ isActive }) => {
-                  const classes = ['nav-link']
-                  if (isActive) {
-                    classes.push('active')
-                  }
-                  if (item.isSettings) {
-                    classes.push('settings-nav-link')
-                  }
-                  return classes.join(' ')
-                }}
+                className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}
               >
-                <span className="nav-icon" aria-hidden="true">
-                  {item.icon}
-                </span>
-                <span className="nav-label">{item.label}</span>
+                {({ isActive }) => {
+                  const iconSrc =
+                    settings.theme === 'dark'
+                      ? isActive
+                        ? item.iconDark
+                        : item.iconLight
+                      : isActive
+                        ? item.iconLight
+                        : item.iconDark
+
+                  return (
+                    <>
+                      <span className="nav-icon" aria-hidden="true">
+                        <img src={iconSrc} alt="" />
+                      </span>
+                      <span className="nav-label">{item.label}</span>
+                    </>
+                  )
+                }}
               </NavLink>
             ))}
           </nav>
           <div className="sidebar-footer">
-            <ProfileSwitcher
-              key={`sidebar-profile-switcher-${activeProfileId}`}
-              profiles={selectableProfiles}
-              activeProfileId={activeProfileId}
-              activeProfile={activeProfile}
-              language={language}
-              onSwitchProfile={handleProfileSwitch}
-              onCreateProfile={() => createProfile('')}
-              onLockProfile={handleLockProfile}
-              className="sidebar-profile-switcher"
-              autoWidth={false}
-            />
-            <NavLink
-              to="/settings"
-              title={t('Einstellungen', 'Settings')}
-              aria-label={t('Einstellungen', 'Settings')}
-              className={({ isActive }) => (isActive ? 'nav-link sidebar-settings-link active' : 'nav-link sidebar-settings-link')}
+            <button
+              type="button"
+              className="nav-link nav-link-logout"
+              title={t('Abmelden', 'Log out')}
+              aria-label={t('Abmelden', 'Log out')}
+              onClick={handleLockProfile}
             >
               <span className="nav-icon" aria-hidden="true">
-                ⚙
+                <img src={logoutIcon} alt="" />
               </span>
-              <span className="nav-label">{t('Einstellungen', 'Settings')}</span>
-            </NavLink>
+              <span className="nav-label">{t('Abmelden', 'Log out')}</span>
+            </button>
           </div>
         </aside>
 
         <div className="content-shell">
-          <header className="topbar">
-            <input
-              value={uiState.globalSearch}
-              onChange={(event) => setUiState({ globalSearch: event.target.value })}
-              placeholder={t('Globale Suche (Abos, Einkommen und Haushaltskosten)', 'Global search (subscriptions, income, and household costs)')}
-              aria-label={t('Globale Suche', 'Global search')}
-            />
-            <div className="topbar-actions">
+          <header className="shell-utility-bar">
+            <div className="shell-utility-left" />
+            <div className="shell-utility-right">
+              <button
+                type="button"
+                className="topbar-theme-toggle"
+                onClick={() => setSettings({ theme: nextTheme })}
+                aria-label={settings.theme === 'dark' ? t('Zum hellen Modus wechseln', 'Switch to light mode') : t('Zum dunklen Modus wechseln', 'Switch to dark mode')}
+                title={settings.theme === 'dark' ? t('Heller Modus', 'Light mode') : t('Dunkler Modus', 'Dark mode')}
+              >
+                <span aria-hidden="true">{settings.theme === 'dark' ? '☀' : '☾'}</span>
+              </button>
               <ProfileSwitcher
                 key={`topbar-profile-switcher-${activeProfileId}`}
                 profiles={selectableProfiles}
@@ -363,20 +318,17 @@ export default function App(): JSX.Element {
                 language={language}
                 onSwitchProfile={handleProfileSwitch}
                 onCreateProfile={() => createProfile('')}
-                onLockProfile={handleLockProfile}
+                onOpenSettings={() => navigate('/settings')}
                 className="topbar-profile-switcher"
-                autoWidth
+                variant="avatar"
               />
-              <button type="button" className="button button-secondary palette-launcher" onClick={() => setPaletteOpen(true)}>
-                {t('Cmd/Ctrl + K', 'Cmd/Ctrl + K')}
-              </button>
             </div>
           </header>
 
           <main className="content">
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/dashboard" element={<DashboardPage quickActions={dashboardQuickActions} />} />
               <Route path="/subscriptions" element={<SubscriptionsPage />} />
               <Route path="/households" element={<HouseholdsPage />} />
               <Route path="/income" element={<IncomePage />} />
@@ -387,7 +339,6 @@ export default function App(): JSX.Element {
           </main>
         </div>
 
-        {paletteOpen ? <CommandPalette onClose={() => setPaletteOpen(false)} actions={paletteActions} language={language} /> : null}
         {showDesktopDownloadHint ? (
           <div
             className="form-modal-backdrop"
@@ -474,17 +425,8 @@ export default function App(): JSX.Element {
             </article>
           </div>
         ) : null}
-        <QuickAddFab
-          onAddSubscription={() => navigate('/subscriptions?quickAdd=1')}
-          onAddIncome={() => navigate('/income?quickAdd=1')}
-          language={language}
-        />
         <ToastHost toasts={toasts} onDismiss={dismissToast} language={language} />
       </div>
     </>
   )
 }
-
-
-
-

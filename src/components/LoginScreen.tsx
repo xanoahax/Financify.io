@@ -7,6 +7,7 @@ interface LoginScreenProps {
   profiles: UserProfile[]
   activeProfileId: string
   activeProfile: UserProfile | null
+  logoSrc: string
   language: 'de' | 'en'
   unlockSecret: string
   unlockError: string
@@ -22,6 +23,7 @@ export function LoginScreen(props: LoginScreenProps): JSX.Element {
     profiles,
     activeProfileId,
     activeProfile,
+    logoSrc,
     language,
     unlockSecret,
     unlockError,
@@ -54,6 +56,9 @@ export function LoginScreen(props: LoginScreenProps): JSX.Element {
   return (
     <main className="auth-shell auth-shell-clean login-shell-bottom">
       <article className="auth-clean">
+        <div className="login-brand-mark" aria-hidden="true">
+          <img src={logoSrc} alt="" />
+        </div>
         <header className="auth-clean-header">
           <h1>{t('Anmeldung', 'Sign in')}</h1>
         </header>

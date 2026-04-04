@@ -20,17 +20,27 @@ export function BarChart({ data, language = 'de', valueFormatter }: BarChartProp
   }
 
   const max = Math.max(...data.map((item) => item.value), 1)
+
   return (
     <div className="chart chart-bars">
-      {data.map((item) => (
+      {data.map((item) => {
+        const fillPercent = (item.value / max) * 100
+
+        return (
         <div key={item.label} className="bar-row">
           <span className="bar-label">{item.label}</span>
           <div className="bar-track">
-            <div className="bar-fill" style={{ width: `${(item.value / max) * 100}%` }} />
+            <div
+              className="bar-fill"
+              style={{
+                clipPath: `inset(0 ${100 - fillPercent}% 0 0 round 999px)`,
+              }}
+            />
           </div>
           <span className="bar-value">{valueFormatter ? valueFormatter(item.value) : item.value.toFixed(0)}</span>
         </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
