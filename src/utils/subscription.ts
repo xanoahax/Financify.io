@@ -94,11 +94,15 @@ export function getCancelByDate(subscription: Subscription, today = todayString(
   return subtractDays(nextPaymentDate, subscription.noticePeriodDays)
 }
 
-export function monthlyTotal(subscriptions: Subscription[]): number {
-  const currentMonthStart = startOfMonth(todayString())
+export function monthlyTotalAt(subscriptions: Subscription[], monthStart = todayString()): number {
+  const currentMonthStart = startOfMonth(monthStart)
   return subscriptions
     .filter((item) => isSubscriptionVisibleInMonth(item, currentMonthStart))
     .reduce((sum, item) => sum + monthlyEquivalent(item), 0)
+}
+
+export function monthlyTotal(subscriptions: Subscription[]): number {
+  return monthlyTotalAt(subscriptions, todayString())
 }
 
 export function yearlyTotal(subscriptions: Subscription[]): number {

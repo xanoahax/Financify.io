@@ -920,7 +920,7 @@ export function SettingsPage(): JSX.Element {
                   {job.employmentType === 'casual' ? (
                     <button
                       type="button"
-                      className={`button ${settings.defaultShiftJobId === job.id ? 'button-primary' : 'button-secondary'}`}
+                      className={`button ${settings.defaultShiftJobId === job.id ? 'button-neutral-emphasis' : 'button-secondary'}`}
                       onClick={() => setSettings({ defaultShiftJobId: job.id })}
                     >
                       {settings.defaultShiftJobId === job.id ? t('Standard für Dienste', 'Default for shifts') : t('Als Dienst-Standard setzen', 'Set as shift default')}
@@ -967,7 +967,7 @@ export function SettingsPage(): JSX.Element {
               <option value="replace">{t('Importmodus: Ersetzen', 'Import mode: Replace')}</option>
               <option value="merge">{t('Importmodus: Zusammenführen', 'Import mode: Merge')}</option>
             </select>
-            <label className="button button-primary file-picker">
+            <label className="button button-neutral-emphasis file-picker">
               {t('JSON importieren', 'Import JSON')}
               <input type="file" accept="application/json" onChange={(event) => void onImport(event)} />
             </label>
@@ -990,6 +990,7 @@ export function SettingsPage(): JSX.Element {
         <button type="button" className="button button-tertiary settings-footer-link" onClick={() => void openIssueReport()}>
           {t('Problem melden', 'Report issue')}
         </button>
+        <p className="settings-footer-copyright">© Noah Langthaler</p>
       </div>
 
       {jobModalOpen ? (

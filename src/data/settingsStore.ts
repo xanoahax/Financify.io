@@ -12,7 +12,7 @@ type SupportedCurrency = (typeof SUPPORTED_CURRENCIES)[number]
 
 export const defaultSettings: Settings = {
   language: 'de',
-  theme: 'light',
+  theme: 'dark',
   currency: 'EUR',
   shiftJobs: [],
   defaultShiftJobId: '',

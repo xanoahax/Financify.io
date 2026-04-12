@@ -1,4 +1,4 @@
-ï»¿import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { AnimatedNumber } from '../components/AnimatedNumber'
 import { DonutChart } from '../components/DonutChart'
 import { LineChart } from '../components/LineChart'
@@ -19,6 +19,8 @@ import { categoryBreakdown, monthlyTotal } from '../utils/subscription'
 export interface DashboardQuickAction {
   id: string
   label: string
+  iconDark: string
+  iconLight: string
   run: () => void
 }
 
@@ -110,27 +112,34 @@ export function DashboardPage({ quickActions }: DashboardPageProps): JSX.Element
               type="button"
               className="shell-plus-button"
               onClick={() => setQuickActionsOpen((current) => !current)}
-              aria-label={t('Schnell hinzufÃ¼gen', 'Quick add')}
+              aria-label={t('Schnell hinzufügen', 'Quick add')}
               aria-expanded={quickActionsOpen}
               aria-haspopup="menu"
-              title={t('Schnell hinzufÃ¼gen', 'Quick add')}
+              title={t('Schnell hinzufügen', 'Quick add')}
             >
               +
             </button>
             {quickActionsOpen ? (
-              <div className="shell-plus-menu" role="menu" aria-label={t('Schnellaktionen', 'Quick actions')}>
-                {quickActions.map((action) => (
+              <div className="dashboard-quick-actions-stack" role="group" aria-label={t('Schnellaktionen', 'Quick actions')}>
+                {quickActions.map((action, index) => (
                   <button
                     key={action.id}
                     type="button"
-                    className="shell-plus-menu-item"
-                    role="menuitem"
+                    className="dashboard-quick-action-button"
+                    style={{ '--quick-action-delay': `${index * 55}ms` } as CSSProperties}
                     onClick={() => {
                       setQuickActionsOpen(false)
                       action.run()
                     }}
+                    aria-label={action.label}
+                    title={action.label}
                   >
-                    {action.label}
+                    <img
+                      src={settings.theme === 'dark' ? action.iconLight : action.iconDark}
+                      alt=""
+                      className="dashboard-quick-action-icon"
+                      aria-hidden="true"
+                    />
                   </button>
                 ))}
               </div>
@@ -143,7 +152,7 @@ export function DashboardPage({ quickActions }: DashboardPageProps): JSX.Element
             <div className="dashboard-summary-value-row">
               <strong><AnimatedNumber value={overview.monthIncome} formatter={(value) => formatMoney(value, settings.currency, settings.privacyHideAmounts)} /></strong>
               <span className="dashboard-summary-pill">
-                {overview.incomeAverage > 0 ? toPercent(overview.incomeAverageDelta) : t('â€”', 'â€”')}
+                {overview.incomeAverage > 0 ? toPercent(overview.incomeAverageDelta) : t('—', '—')}
               </span>
             </div>
           </article>
@@ -220,3 +229,11 @@ export function DashboardPage({ quickActions }: DashboardPageProps): JSX.Element
     </section>
   )
 }
+
+
+
+
+
+
+
+

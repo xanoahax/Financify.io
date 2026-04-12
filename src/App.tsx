@@ -168,12 +168,34 @@ export default function App(): JSX.Element {
 
   const dashboardQuickActions: DashboardQuickAction[] = useMemo(
     () => [
-      { id: 'dash-income', label: t('Einkommen hinzufügen', 'Add income'), run: () => navigate('/income?quickAdd=income') },
-      { id: 'dash-expense', label: t('Ausgabe hinzufügen', 'Add expense'), run: () => navigate('/expenses?quickAdd=expense') },
-      { id: 'dash-shift', label: t('Dienst loggen', 'Log shift'), run: () => navigate('/income?quickAdd=shift') },
-      { id: 'dash-subscription', label: t('Abo hinzufügen', 'Add subscription'), run: () => navigate('/subscriptions?quickAdd=subscription') },
-      { id: 'dash-household-cost', label: t('Haushaltskosten hinzufügen', 'Add household cost'), run: () => navigate('/households?quickAdd=cost') },
-      { id: 'dash-household', label: t('Haushalt hinzufügen', 'Add household'), run: () => navigate('/households?quickAdd=household') },
+      {
+        id: 'dash-income',
+        label: t('Einkommen hinzufügen', 'Add income'),
+        iconDark: incomeIconDark,
+        iconLight: incomeIconLight,
+        run: () => navigate('/income?quickAdd=income'),
+      },
+      {
+        id: 'dash-expense',
+        label: t('Ausgabe hinzufügen', 'Add expense'),
+        iconDark: expenseIconDark,
+        iconLight: expenseIconLight,
+        run: () => navigate('/expenses?quickAdd=expense'),
+      },
+      {
+        id: 'dash-subscription',
+        label: t('Abo hinzufügen', 'Add subscription'),
+        iconDark: subsIconDark,
+        iconLight: subsIconLight,
+        run: () => navigate('/subscriptions?quickAdd=subscription'),
+      },
+      {
+        id: 'dash-household-cost',
+        label: t('Haushaltskosten hinzufügen', 'Add household cost'),
+        iconDark: houseIconDark,
+        iconLight: houseIconLight,
+        run: () => navigate('/households?quickAdd=cost'),
+      },
     ],
     [navigate, t],
   )

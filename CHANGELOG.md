@@ -3,6 +3,12 @@
 All notable changes for desktop releases are documented here.  
 Each release must have a matching section (`## vX.Y.Z`) so GitHub release notes and the in-app update dialog stay in sync.
 
+## v0.11.1
+- Added a new **Expenses** page for tracking everyday spending outside of household costs, with month/year views, recurring expense support, trend and breakdown charts, and searchable entries.
+- Improved consistency across income and statistics calculations so current-month totals and dashboard/statistics cashflow figures include the same relevant data sources.
+- Refined dashboard and settings interactions with cleaner quick actions, flatter button styling, subtler card shadows, improved tooltip behavior, and better issue reporting polish.
+- Added several smaller UX refinements including updated expense/subscription icon usage, dark mode as the default for new profiles, and a footer copyright notice in Settings.
+
 ## v0.11.0
 - Introduced the first major desktop redesign pass with a cleaner dashboard-inspired shell, dock-style sidebar, refined top controls, and aligned card layouts across core pages.
 - Simplified appearance to focused light and dark themes, added a more neutral greyscale dark mode, and polished modal, dropdown, and form field surfaces for a calmer UI.

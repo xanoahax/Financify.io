@@ -1054,7 +1054,7 @@ dependencies = [
 
 [[package]]
 name = "financify-desktop"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "log",
  "serde",

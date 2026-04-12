@@ -6,10 +6,12 @@ import { useCardRowStagger } from '../hooks/useCardRowStagger'
 import { useAppContext } from '../state/useAppContext'
 import type { IncomeEntry } from '../types/models'
 import { addDays, formatDateByPattern, monthLabel, parseDate, todayString } from '../utils/date'
+import { materializeExpenseEntriesForRange, sumExpenses } from '../utils/expense'
 import { formatMoney, toPercent } from '../utils/format'
+import { monthlyResidentNetTotal } from '../utils/household'
 import { buildFixedSalaryIncomeTemplateEntries, incomeByMonth, materializeIncomeEntriesForRange, sourceBreakdown, sumIncome } from '../utils/income'
 import { tx } from '../utils/i18n'
-import { categoryBreakdown, monthlyTotal } from '../utils/subscription'
+import { categoryBreakdown, monthlyTotalAt } from '../utils/subscription'
 
 type RangePreset = '30d' | '6m' | '12m' | 'custom'
 
@@ -44,7 +46,7 @@ function incomeSourceLabel(entry: IncomeEntry, language: 'de' | 'en'): string {
 }
 
 export function StatsPage(): JSX.Element {
-  const { subscriptions, incomeEntries, settings } = useAppContext()
+  const { subscriptions, incomeEntries, expenseEntries, householdCosts, householdPayers, settings } = useAppContext()
   const pageRef = useRef<HTMLElement | null>(null)
   const [preset, setPreset] = useState<RangePreset>('30d')
   const [customStart, setCustomStart] = useState(addDays(todayString(), -90))
@@ -60,30 +62,36 @@ export function StatsPage(): JSX.Element {
   const data = useMemo(() => {
     const allIncomeEntries = [...incomeEntries, ...buildFixedSalaryIncomeTemplateEntries(settings.shiftJobs)]
     const incomeInRange = materializeIncomeEntriesForRange(allIncomeEntries, range.start, range.end)
+    const expensesInRange = materializeExpenseEntriesForRange(expenseEntries, range.start, range.end)
     const previousStart = addDays(range.start, -rangeDays)
     const previousEnd = addDays(range.end, -rangeDays)
     const previousIncome = materializeIncomeEntriesForRange(allIncomeEntries, previousStart, previousEnd)
 
     const activeSubscriptions = subscriptions.filter((item) => item.status === 'active' || item.status === 'paused')
-    const monthlySpend = monthlyTotal(activeSubscriptions)
+    const monthlySubscriptionSpend = monthlyTotalAt(activeSubscriptions, range.end)
+    const monthlyHouseholdSpend = monthlyResidentNetTotal(householdCosts, householdPayers, range.end)
     const monthsInRange = Math.max(1, rangeDays / 30)
-    const estimatedSpend = monthlySpend * monthsInRange
+    const estimatedRecurringSpend = (monthlySubscriptionSpend + monthlyHouseholdSpend) * monthsInRange
+    const expenseTotal = sumExpenses(expensesInRange)
+    const totalSpend = estimatedRecurringSpend + expenseTotal
     const incomeTotal = sumIncome(incomeInRange)
     const previousIncomeTotal = sumIncome(previousIncome)
     const incomeDelta = previousIncomeTotal === 0 ? 0 : ((incomeTotal - previousIncomeTotal) / previousIncomeTotal) * 100
 
     return {
       incomeTotal,
-      monthlySpend,
-      estimatedSpend,
-      cashflow: incomeTotal - estimatedSpend,
+      monthlySubscriptionSpend,
+      monthlyHouseholdSpend,
+      estimatedRecurringSpend,
+      expenseTotal,
+      cashflow: incomeTotal - totalSpend,
       incomeDelta,
       monthlyIncomeSeries: incomeByMonth(incomeInRange).map((item) => ({ label: monthLabel(item.month, monthLocale), value: item.value })),
       sourceSeries: sourceBreakdown(incomeInRange, (entry) => incomeSourceLabel(entry, settings.language)),
       categorySeries: categoryBreakdown(activeSubscriptions),
       previousRange: { start: previousStart, end: previousEnd },
     }
-  }, [incomeEntries, monthLocale, range.end, range.start, rangeDays, settings.language, settings.shiftJobs, subscriptions])
+  }, [expenseEntries, householdCosts, householdPayers, incomeEntries, monthLocale, range.end, range.start, rangeDays, settings.language, settings.shiftJobs, subscriptions])
 
   return (
     <section ref={pageRef} className="page">
@@ -116,19 +124,20 @@ export function StatsPage(): JSX.Element {
           hint={`${t('ggü. Vorzeitraum', 'vs previous range')} ${toPercent(data.incomeDelta)}`}
         />
         <StatCard
-          label={t('Geschätzte Abo-Ausgaben', 'Estimated subscription expenses')}
-          value={<AnimatedNumber value={data.estimatedSpend} formatter={(value) => formatMoney(value, settings.currency, settings.privacyHideAmounts)} />}
-          hint={`${formatMoney(data.monthlySpend, settings.currency, settings.privacyHideAmounts)} ${t('pro Monat', 'per month')}`}
+          label={t('Geschätzte laufende Kosten', 'Estimated recurring costs')}
+          value={<AnimatedNumber value={data.estimatedRecurringSpend} formatter={(value) => formatMoney(value, settings.currency, settings.privacyHideAmounts)} />}
+          hint={`${formatMoney(data.monthlySubscriptionSpend, settings.currency, settings.privacyHideAmounts)} ${t('Abos', 'subscriptions')} + ${formatMoney(data.monthlyHouseholdSpend, settings.currency, settings.privacyHideAmounts)} ${t('Haushalt', 'household')} ${t('pro Monat', 'per month')}`}
         />
         <StatCard
           label={t('Cashflow', 'Cashflow')}
           value={<AnimatedNumber value={data.cashflow} formatter={(value) => formatMoney(value, settings.currency, settings.privacyHideAmounts)} />}
-          hint={`${t('Vorzeitraum', 'Previous range')}: ${formatDateByPattern(data.previousRange.start, settings.dateFormat)} - ${formatDateByPattern(data.previousRange.end, settings.dateFormat)}`}
+          hint={`${t('inkl.', 'incl.')} ${formatMoney(data.expenseTotal, settings.currency, settings.privacyHideAmounts)} ${t('sonstige Ausgaben', 'other expenses')}`}
         />
       </div>
       </section>
 
-      <section className="dashboard-grid">        <article className="card dashboard-card">
+      <section className="dashboard-grid">
+        <article className="card dashboard-card">
           <h2>{t('Einkommensquellen', 'Income sources')}</h2>
           <DonutChart
             data={data.sourceSeries}

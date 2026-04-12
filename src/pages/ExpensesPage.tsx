@@ -28,8 +28,8 @@ interface PendingExpenseUpdateState {
 }
 
 const EXPENSE_CATEGORY_PRESETS = {
-  de: ['Lebensmittel', 'Shopping', 'Elektronik', 'Auto', 'Transport', 'Freizeit', 'Reisen', 'Gesundheit', 'Medikamente', 'Geschenke', 'Sonstiges'],
-  en: ['Groceries', 'Shopping', 'Electronics', 'Car', 'Transport', 'Leisure', 'Travel', 'Health', 'Drugs/Medication', 'Gifts', 'Other'],
+  de: ['Lebensmittel', 'Shopping', 'Elektronik', 'Auto', 'Transport', 'Freizeit', 'Reisen', 'Gesundheit', 'Apotheke', 'Geschenke', 'Sonstiges'],
+  en: ['Groceries', 'Shopping', 'Electronics', 'Car', 'Transport', 'Leisure', 'Travel', 'Health', 'Pharmacy', 'Gifts', 'Other'],
 } as const
 
 function parseTags(input: string): string[] {
@@ -696,6 +696,7 @@ export function ExpensesPage(): JSX.Element {
     </section>
   )
 }
+
 
 
 
