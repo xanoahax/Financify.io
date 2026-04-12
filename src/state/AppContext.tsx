@@ -11,6 +11,7 @@ import {
 } from '../data/settingsStore'
 import {
   clearRepositoryCache,
+  listExpenseEntries,
   listHouseholdCostSplits,
   listHouseholdCosts,
   listHouseholdMembers,
@@ -21,6 +22,7 @@ import {
   listSubscriptions,
   removeHouseholdCost,
   removeHouseholdPayer,
+  removeExpenseEntry,
   removeIncomeEntry,
   removeInterestScenario,
   removeSubscription,
@@ -29,6 +31,7 @@ import {
   replaceHouseholdMembers,
   replaceHouseholdPayers,
   replaceHouseholds,
+  replaceExpenseEntries,
   replaceIncomeEntries,
   replaceInterestScenarios,
   replaceSubscriptions,
@@ -38,6 +41,7 @@ import {
   saveHouseholdPayer,
   saveHousehold,
   saveIncomeEntry,
+  saveExpenseEntry,
   saveInterestScenario,
   saveSubscription,
 } from '../data/repositories'
@@ -50,6 +54,7 @@ import {
 } from '../data/profileStore'
 import type {
   AppBackup,
+  ExpenseEntry,
   Household,
   HouseholdCost,
   HouseholdCostSplit,
@@ -111,6 +116,7 @@ export interface AppContextValue {
   loading: boolean
   subscriptions: Subscription[]
   incomeEntries: IncomeEntry[]
+  expenseEntries: ExpenseEntry[]
   scenarios: InterestScenario[]
   households: Household[]
   householdMembers: HouseholdMember[]
@@ -161,6 +167,13 @@ export interface AppContextValue {
     options?: { effectiveFrom?: string },
   ) => Promise<void>
   deleteIncomeEntry: (id: string) => Promise<void>
+  addExpenseEntry: (payload: Omit<ExpenseEntry, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>
+  updateExpenseEntry: (
+    id: string,
+    payload: Partial<ExpenseEntry>,
+    options?: { effectiveFrom?: string },
+  ) => Promise<void>
+  deleteExpenseEntry: (id: string) => Promise<void>
   addScenario: (payload: InterestScenarioInput) => Promise<void>
   updateScenario: (id: string, payload: InterestScenarioInput) => Promise<void>
   deleteScenario: (id: string) => Promise<void>
@@ -213,6 +226,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
   const [uiState, setUiStateState] = useState<UiState>(initialPersistedPreferences.uiState)
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([])
   const [incomeEntries, setIncomeEntries] = useState<IncomeEntry[]>([])
+  const [expenseEntries, setExpenseEntries] = useState<ExpenseEntry[]>([])
   const [scenarios, setScenarios] = useState<InterestScenario[]>([])
   const [households, setHouseholds] = useState<Household[]>([])
   const [householdMembers, setHouseholdMembers] = useState<HouseholdMember[]>([])
@@ -290,9 +304,10 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       setLoading(true)
       setHydratedProfileId('')
       try {
-        const [loadedSubscriptions, loadedIncomeEntries, loadedScenarios, loadedHouseholds, loadedHouseholdMembers, loadedHouseholdPayers, loadedHouseholdCosts, loadedHouseholdCostSplits] = await Promise.all([
+        const [loadedSubscriptions, loadedIncomeEntries, loadedExpenseEntries, loadedScenarios, loadedHouseholds, loadedHouseholdMembers, loadedHouseholdPayers, loadedHouseholdCosts, loadedHouseholdCostSplits] = await Promise.all([
           listSubscriptions(activeProfileId),
           listIncomeEntries(activeProfileId),
+          listExpenseEntries(activeProfileId),
           listInterestScenarios(activeProfileId),
           listHouseholds(activeProfileId),
           listHouseholdMembers(activeProfileId),
@@ -332,6 +347,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
         setSkippedUpdateVersion(persistedPreferences.skippedUpdateVersion)
         setSubscriptions(loadedSubscriptions)
         setIncomeEntries(loadedIncomeEntries)
+        setExpenseEntries(loadedExpenseEntries)
         setScenarios(loadedScenarios)
         setHouseholds(loadedHouseholds)
         setHouseholdMembers(loadedHouseholdMembers)
@@ -500,6 +516,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       await Promise.all([
         replaceSubscriptions(profileId, []),
         replaceIncomeEntries(profileId, []),
+        replaceExpenseEntries(profileId, []),
         replaceInterestScenarios(profileId, []),
         replaceHouseholds(profileId, []),
         replaceHouseholdMembers(profileId, []),
@@ -659,6 +676,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       void Promise.all([
         replaceSubscriptions(activeProfileId, []),
         replaceIncomeEntries(activeProfileId, []),
+        replaceExpenseEntries(activeProfileId, []),
         replaceInterestScenarios(activeProfileId, []),
       ])
         .then(() => deleteProfileDb(activeProfileId))
@@ -1032,6 +1050,145 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       })
     },
     [activeProfileId, incomeEntries, pushToast, settings.language],
+  )
+
+  const addExpenseEntry = useCallback(
+    async (payload: Omit<ExpenseEntry, 'id' | 'createdAt' | 'updatedAt'>) => {
+      if (!activeProfileId) {
+        return
+      }
+      ensurePositiveNumber(payload.amount, tx(settings.language, 'Ausgabenbetrag', 'Expense amount'), settings.language)
+      if (!payload.title.trim()) {
+        throw new Error(tx(settings.language, 'Ausgabe ist erforderlich.', 'Expense title is required.'))
+      }
+      if (!payload.category.trim()) {
+        throw new Error(tx(settings.language, 'Kategorie ist erforderlich.', 'Category is required.'))
+      }
+      const timestamp = nowIso()
+      const next: ExpenseEntry = {
+        ...payload,
+        id: makeId(),
+        endDate: payload.endDate || undefined,
+        title: payload.title.trim(),
+        category: payload.category.trim(),
+        tags: normalizeTags(payload.tags),
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }
+      await saveExpenseEntry(activeProfileId, next)
+      setExpenseEntries((current) => [next, ...current])
+      pushToast({ tone: 'success', text: tx(settings.language, 'Ausgabe gespeichert.', 'Expense saved.') })
+    },
+    [activeProfileId, pushToast, settings.language],
+  )
+
+  const updateExpenseEntry = useCallback(
+    async (id: string, payload: Partial<ExpenseEntry>, options?: { effectiveFrom?: string }) => {
+      if (!activeProfileId) {
+        return
+      }
+      const existing = expenseEntries.find((item) => item.id === id)
+      if (!existing) {
+        throw new Error(tx(settings.language, 'Ausgabe nicht gefunden.', 'Expense entry not found.'))
+      }
+      const timestamp = nowIso()
+      const merged: ExpenseEntry = {
+        ...existing,
+        ...payload,
+        title: payload.title !== undefined ? payload.title.trim() : existing.title,
+        category: payload.category !== undefined ? payload.category.trim() : existing.category,
+        endDate: payload.endDate !== undefined ? payload.endDate || undefined : existing.endDate,
+        tags: payload.tags ? normalizeTags(payload.tags) : existing.tags,
+        updatedAt: timestamp,
+      }
+      ensurePositiveNumber(merged.amount, tx(settings.language, 'Ausgabenbetrag', 'Expense amount'), settings.language)
+      if (!merged.title) {
+        throw new Error(tx(settings.language, 'Ausgabe ist erforderlich.', 'Expense title is required.'))
+      }
+      if (!merged.category) {
+        throw new Error(tx(settings.language, 'Kategorie ist erforderlich.', 'Category is required.'))
+      }
+      const effectiveFrom = options?.effectiveFrom
+      const hasRecurringImpactChange =
+        (payload.amount !== undefined && payload.amount !== existing.amount) ||
+        (payload.title !== undefined && payload.title !== existing.title) ||
+        (payload.category !== undefined && payload.category !== existing.category) ||
+        (payload.recurring !== undefined && payload.recurring !== existing.recurring) ||
+        (payload.recurringIntervalDays !== undefined && payload.recurringIntervalDays !== existing.recurringIntervalDays)
+      const canSplitHistory =
+        Boolean(effectiveFrom) &&
+        hasRecurringImpactChange &&
+        existing.recurring !== 'none' &&
+        compareDateStrings(effectiveFrom as string, existing.date) > 0 &&
+        (!existing.endDate || compareDateStrings(effectiveFrom as string, existing.endDate) <= 0)
+
+      const requestedSplit = Boolean(effectiveFrom) && hasRecurringImpactChange
+      if (requestedSplit && !canSplitHistory) {
+        throw new Error(
+          tx(
+            settings.language,
+            'Ab Datum konnte nicht angewendet werden. Bitte ein Datum nach dem Startdatum und innerhalb des aktiven Zeitraums wählen.',
+            'From date could not be applied. Please choose a date after the start date and within the active period.',
+          ),
+        )
+      }
+
+      if (canSplitHistory) {
+        const effective = effectiveFrom as string
+        const previousSegment: ExpenseEntry = {
+          ...existing,
+          endDate: addDays(effective, -1),
+          updatedAt: timestamp,
+        }
+        const nextEndDate = merged.endDate && compareDateStrings(merged.endDate, effective) >= 0 ? merged.endDate : undefined
+        const nextSegment: ExpenseEntry = {
+          ...merged,
+          id: makeId(),
+          date: effective,
+          endDate: nextEndDate,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        }
+        const nextExpenseEntries = [nextSegment, previousSegment, ...expenseEntries.filter((item) => item.id !== id)].sort((a, b) =>
+          b.date.localeCompare(a.date),
+        )
+        await replaceExpenseEntries(activeProfileId, nextExpenseEntries)
+        setExpenseEntries(nextExpenseEntries)
+        pushToast({
+          tone: 'success',
+          text: tx(settings.language, 'Ausgabenänderung ab gewähltem Monat gespeichert.', 'Expense change saved from selected month.'),
+        })
+        return
+      }
+
+      await saveExpenseEntry(activeProfileId, merged)
+      setExpenseEntries((current) => current.map((item) => (item.id === id ? merged : item)))
+      pushToast({ tone: 'success', text: tx(settings.language, 'Ausgabe aktualisiert.', 'Expense updated.') })
+    },
+    [activeProfileId, expenseEntries, pushToast, settings.language],
+  )
+
+  const deleteExpenseEntry = useCallback(
+    async (id: string) => {
+      if (!activeProfileId) {
+        return
+      }
+      const existing = expenseEntries.find((item) => item.id === id)
+      if (!existing) {
+        return
+      }
+      await removeExpenseEntry(activeProfileId, id)
+      setExpenseEntries((current) => current.filter((item) => item.id !== id))
+      pushToast({
+        tone: 'warning',
+        text: tx(settings.language, 'Ausgabe gelöscht.', 'Expense deleted.'),
+        actionLabel: tx(settings.language, 'Rückgängig', 'Undo'),
+        action: () => {
+          void saveExpenseEntry(activeProfileId, existing).then(() => setExpenseEntries((current) => [existing, ...current]))
+        },
+      })
+    },
+    [activeProfileId, expenseEntries, pushToast, settings.language],
   )
 
   const addScenario = useCallback(
@@ -1620,7 +1777,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
           authSecretHash: '',
         }
     return {
-      backupSchema: 3,
+      backupSchema: 4,
       exportedAt: nowIso(),
       scope: 'single-profile',
       activeProfileId,
@@ -1631,6 +1788,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
         backgroundImageDataUrl,
         subscriptions,
         incomeEntries,
+        expenseEntries,
         interestScenarios: scenarios,
         households,
         householdMembers,
@@ -1648,6 +1806,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
     householdMembers,
     householdPayers,
     households,
+    expenseEntries,
     incomeEntries,
     isProfileLocked,
     scenarios,
@@ -1693,6 +1852,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
               backgroundImageDataUrl: payload.backgroundImageDataUrl ?? null,
               subscriptions: payload.subscriptions ?? [],
               incomeEntries: payload.incomeEntries ?? [],
+              expenseEntries: payload.expenseEntries ?? [],
               interestScenarios: payload.interestScenarios ?? [],
               households: payload.households ?? [],
               householdMembers: payload.householdMembers ?? [],
@@ -1702,6 +1862,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
             }
       const safeSubscriptions = Array.isArray(sourceProfile.subscriptions) ? sourceProfile.subscriptions : []
       const safeIncomeEntries = Array.isArray(sourceProfile.incomeEntries) ? sourceProfile.incomeEntries : []
+      const safeExpenseEntries = Array.isArray(sourceProfile.expenseEntries) ? sourceProfile.expenseEntries : []
       const safeScenarios = Array.isArray(sourceProfile.interestScenarios) ? sourceProfile.interestScenarios : []
       const safeHouseholds = Array.isArray(sourceProfile.households) ? sourceProfile.households : []
       const safeHouseholdMembers = Array.isArray(sourceProfile.householdMembers) ? sourceProfile.householdMembers : []
@@ -1718,6 +1879,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       const safeHouseholdCostSplits = Array.isArray(sourceProfile.householdCostSplits) ? sourceProfile.householdCostSplits : []
       const mergedSubscriptions = mode === 'replace' ? safeSubscriptions : uniqueById([...subscriptions, ...safeSubscriptions])
       const mergedIncome = mode === 'replace' ? safeIncomeEntries : uniqueById([...incomeEntries, ...safeIncomeEntries])
+      const mergedExpenses = mode === 'replace' ? safeExpenseEntries : uniqueById([...expenseEntries, ...safeExpenseEntries])
       const mergedScenarios = mode === 'replace' ? safeScenarios : uniqueById([...scenarios, ...safeScenarios])
       const mergedHouseholds = mode === 'replace' ? safeHouseholds : uniqueById([...households, ...safeHouseholds])
       const mergedHouseholdMembers = mode === 'replace' ? safeHouseholdMembers : uniqueById([...householdMembers, ...safeHouseholdMembers])
@@ -1743,6 +1905,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       await Promise.all([
         replaceSubscriptions(activeProfileId, mergedSubscriptions),
         replaceIncomeEntries(activeProfileId, mergedIncome),
+        replaceExpenseEntries(activeProfileId, mergedExpenses),
         replaceInterestScenarios(activeProfileId, mergedScenarios),
         replaceHouseholds(activeProfileId, mergedHouseholds),
         replaceHouseholdMembers(activeProfileId, mergedHouseholdMembers),
@@ -1753,6 +1916,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
 
       setSubscriptions(mergedSubscriptions)
       setIncomeEntries(mergedIncome)
+      setExpenseEntries(mergedExpenses)
       setScenarios(mergedScenarios)
       setHouseholds(mergedHouseholds)
       setHouseholdMembers(mergedHouseholdMembers)
@@ -1788,6 +1952,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       householdMembers,
       householdPayers,
       households,
+      expenseEntries,
       incomeEntries,
       isProfileLocked,
       pushToast,
@@ -1807,6 +1972,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
     await Promise.all([
       replaceSubscriptions(activeProfileId, []),
       replaceIncomeEntries(activeProfileId, []),
+      replaceExpenseEntries(activeProfileId, []),
       replaceInterestScenarios(activeProfileId, []),
       replaceHouseholds(activeProfileId, []),
       replaceHouseholdMembers(activeProfileId, []),
@@ -1821,6 +1987,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
     setSkippedUpdateVersion('')
     setSubscriptions([])
     setIncomeEntries([])
+    setExpenseEntries([])
     setScenarios([])
     setHouseholds([])
     setHouseholdMembers([])
@@ -1845,6 +2012,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       loading,
       subscriptions,
       incomeEntries,
+      expenseEntries,
       scenarios,
       households,
       householdMembers,
@@ -1887,6 +2055,9 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       addIncomeEntry,
       updateIncomeEntry,
       deleteIncomeEntry,
+      addExpenseEntry,
+      updateExpenseEntry,
+      deleteExpenseEntry,
       addScenario,
       updateScenario,
       deleteScenario,
@@ -1911,6 +2082,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       dismissToast,
     }),
     [
+      addExpenseEntry,
       addIncomeEntry,
       addHousehold,
       addHouseholdCost,
@@ -1926,6 +2098,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       completeOnboarding,
       createProfile,
       dismissUpdatePrompt,
+      deleteExpenseEntry,
       deleteIncomeEntry,
       deleteHousehold,
       deleteHouseholdCost,
@@ -1939,6 +2112,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       exitOnboarding,
       exportBackup,
       importBackup,
+      expenseEntries,
       householdCostSplits,
       householdCosts,
       householdMembers,
@@ -1969,6 +2143,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       toasts,
       uiState,
       updateCheckError,
+      updateExpenseEntry,
       updatePrompt,
       updateIncomeEntry,
       updateHousehold,

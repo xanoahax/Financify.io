@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { AnimatedNumber } from '../components/AnimatedNumber'
-import { BarChart } from '../components/BarChart'
 import { DonutChart } from '../components/DonutChart'
 import { LineChart } from '../components/LineChart'
 import { useCardRowStagger } from '../hooks/useCardRowStagger'
 import { useGuardedBackdropClose } from '../hooks/useGuardedBackdropClose'
 import { useAppContext } from '../state/useAppContext'
 import type { IncomeEntry } from '../types/models'
-import { addDays, endOfMonth, endOfYear, formatDateByPattern, monthLabel, monthKey, startOfMonth, startOfYear, todayString } from '../utils/date'
+import { addDays, addMonths, endOfMonth, endOfYear, formatDateByPattern, monthLabel, monthKey, startOfMonth, startOfYear, todayString } from '../utils/date'
 import { formatMoney, getCurrencySymbol, toPercent } from '../utils/format'
 import { buildFixedSalaryIncomeTemplateEntries, incomeByMonth, materializeIncomeEntriesForRange, monthOverMonthChange, monthStats, sourceBreakdown, sumIncome } from '../utils/income'
 import { tx } from '../utils/i18n'
@@ -397,23 +396,30 @@ export function IncomePage(): JSX.Element {
     [selectedYearEndDate, selectedYearStartDate, sourceAndQueryFiltered],
   )
 
+  const selectedMonthRollingEntries = useMemo(() => {
+    const rangeEnd = endOfMonth(selectedMonthDate)
+    const rangeStart = startOfMonth(addMonths(selectedMonthDate, -11))
+    return materializeIncomeEntriesForRange(sourceAndQueryFiltered, rangeStart, rangeEnd)
+  }, [selectedMonthDate, sourceAndQueryFiltered])
+
   const rollingYearEntries = useMemo(
     () => materializeIncomeEntriesForRange(sourceAndQueryFiltered, addDays(today, -365), today),
     [sourceAndQueryFiltered, today],
   )
 
   const stats = useMemo(() => {
-    const monthly = incomeByMonth(rollingYearEntries)
+    const comparisonEntries = viewMode === 'month' ? selectedMonthRollingEntries : rollingYearEntries
+    const monthly = incomeByMonth(comparisonEntries)
     const totalEntries = viewMode === 'year' && isSelectedYearCurrent ? selectedYearToDateEntries : resolvedPeriodEntries
     return {
       total: sumIncome(totalEntries),
       yearForecastTotal: sumIncome(selectedYearForecastEntries),
       monthSeries: monthly.map((item) => ({ label: monthLabel(item.month, monthLocale), value: item.value })).slice(-12),
       sourceSeries: sourceBreakdown(totalEntries, (entry) => incomeSourceLabel(entry, settings.language)),
-      aggregates: monthStats(rollingYearEntries),
-      mom: monthOverMonthChange(rollingYearEntries),
+      aggregates: monthStats(comparisonEntries),
+      mom: monthOverMonthChange(comparisonEntries),
     }
-  }, [isSelectedYearCurrent, monthLocale, resolvedPeriodEntries, rollingYearEntries, selectedYearForecastEntries, selectedYearToDateEntries, settings.language, viewMode])
+  }, [isSelectedYearCurrent, monthLocale, resolvedPeriodEntries, rollingYearEntries, selectedMonthRollingEntries, selectedYearForecastEntries, selectedYearToDateEntries, settings.language, viewMode])
   const selectedMonthLabel = useMemo(() => monthLabel(selectedMonth, monthLocale), [monthLocale, selectedMonth])
   const trendRangeOptions: Array<{ value: IncomeTrendRange; label: string }> = [
     { value: 3, label: t('3 Monate', '3 months') },
@@ -952,14 +958,7 @@ export function IncomePage(): JSX.Element {
       ) : null}
 
       <section className="dashboard-grid">
-        <article className="card dashboard-card dashboard-card-fit">
-          <header className="section-header">
-            <h2>{t('Einkommen pro Monat', 'Income per month')}</h2>
-          </header>
-          <BarChart data={stats.monthSeries} language={settings.language} />
-        </article>
-
-        <article className="card dashboard-card dashboard-card-fit income-entries-card">
+        <article className="card dashboard-card dashboard-card-fit card-span-2 income-entries-card">
           <header className="section-header">
             <h2>{t('Eintr?ge', 'Entries')}</h2>
             <div className="filters">
@@ -1020,3 +1019,5 @@ export function IncomePage(): JSX.Element {
     </section>
   )
 }
+
+

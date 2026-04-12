@@ -549,12 +549,13 @@ export function SubscriptionsPage(): JSX.Element {
       ) : null}
 
       <section className="dashboard-grid">
-        <article className="card dashboard-card">
-          <h2>{t('Top-Kosten', 'Top costs')}</h2>
-          <BarChart
-            data={totals.top.map((item) => ({ label: item.name, value: monthlyEquivalent(item) }))}
+        <article className="card dashboard-card dashboard-card-fit">
+          <h2>{t('Trend (12 Monate)', 'Trend (12 months)')}</h2>
+          <LineChart
+            data={totals.trend}
             language={settings.language}
             valueFormatter={(value) => formatMoney(value, settings.currency, settings.privacyHideAmounts)}
+            reverseColorScale
           />
         </article>
         <article className="card dashboard-card">
@@ -569,13 +570,12 @@ export function SubscriptionsPage(): JSX.Element {
       </section>
 
       <section className="dashboard-grid">
-        <article className="card dashboard-card dashboard-card-fit">
-          <h2>{t('Trend (12 Monate)', 'Trend (12 months)')}</h2>
-          <LineChart
-            data={totals.trend}
+        <article className="card dashboard-card">
+          <h2>{t('Top-Kosten', 'Top costs')}</h2>
+          <BarChart
+            data={totals.top.map((item) => ({ label: item.name, value: monthlyEquivalent(item) }))}
             language={settings.language}
             valueFormatter={(value) => formatMoney(value, settings.currency, settings.privacyHideAmounts)}
-            reverseColorScale
           />
         </article>
 

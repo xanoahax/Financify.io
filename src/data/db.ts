@@ -1,5 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import type {
+  ExpenseEntry,
   Household,
   HouseholdCost,
   HouseholdCostSplit,
@@ -12,7 +13,7 @@ import type {
 import { DEFAULT_PROFILE_ID } from './profileStore'
 
 const LEGACY_DB_NAME = 'financify-db'
-const DB_VERSION = 3
+const DB_VERSION = 4
 
 interface SubscriptionRecord extends Subscription {
   nextPaymentDateCache: string
@@ -34,6 +35,14 @@ interface FinancifySchema extends DBSchema {
     indexes: {
       date: string
       source: string
+    }
+  }
+  expenseEntries: {
+    key: string
+    value: ExpenseEntry
+    indexes: {
+      date: string
+      category: string
     }
   }
   interestScenarios: {
@@ -110,6 +119,12 @@ function createDb(dbName: string): Promise<IDBPDatabase<FinancifySchema>> {
         incomes.createIndex('source', 'source')
       }
 
+      if (!db.objectStoreNames.contains('expenseEntries')) {
+        const expenses = db.createObjectStore('expenseEntries', { keyPath: 'id' })
+        expenses.createIndex('date', 'date')
+        expenses.createIndex('category', 'category')
+      }
+
       if (!db.objectStoreNames.contains('interestScenarios')) {
         const scenarios = db.createObjectStore('interestScenarios', { keyPath: 'id' })
         scenarios.createIndex('createdAt', 'createdAt')
@@ -182,10 +197,11 @@ export async function deleteProfileDb(profileId: string): Promise<void> {
 
 export async function hasLegacyDbData(): Promise<boolean> {
   const db = await getDb(DEFAULT_PROFILE_ID)
-  const tx = db.transaction(['subscriptions', 'incomeEntries', 'interestScenarios', 'households', 'householdMembers', 'householdPayers', 'householdCosts', 'householdCostSplits'], 'readonly')
-  const [subscriptionsCount, incomesCount, scenariosCount, householdsCount, membersCount, payersCount, costsCount, splitsCount] = await Promise.all([
+  const tx = db.transaction(['subscriptions', 'incomeEntries', 'expenseEntries', 'interestScenarios', 'households', 'householdMembers', 'householdPayers', 'householdCosts', 'householdCostSplits'], 'readonly')
+  const [subscriptionsCount, incomesCount, expensesCount, scenariosCount, householdsCount, membersCount, payersCount, costsCount, splitsCount] = await Promise.all([
     tx.objectStore('subscriptions').count(),
     tx.objectStore('incomeEntries').count(),
+    tx.objectStore('expenseEntries').count(),
     tx.objectStore('interestScenarios').count(),
     tx.objectStore('households').count(),
     tx.objectStore('householdMembers').count(),
@@ -194,7 +210,7 @@ export async function hasLegacyDbData(): Promise<boolean> {
     tx.objectStore('householdCostSplits').count(),
   ])
   await tx.done
-  return subscriptionsCount + incomesCount + scenariosCount + householdsCount + membersCount + payersCount + costsCount + splitsCount > 0
+  return subscriptionsCount + incomesCount + expensesCount + scenariosCount + householdsCount + membersCount + payersCount + costsCount + splitsCount > 0
 }
 
 export function resetDbCache(): void {

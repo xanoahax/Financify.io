@@ -9,6 +9,7 @@ import { useDocumentAppearance } from './hooks/useDocumentAppearance'
 import { useGuardedBackdropClose } from './hooks/useGuardedBackdropClose'
 import { useLockScreenVisuals } from './hooks/useLockScreenVisuals'
 import { DashboardPage, type DashboardQuickAction } from './pages/DashboardPage'
+import { ExpensesPage } from './pages/ExpensesPage'
 import { HouseholdsPage } from './pages/HouseholdsPage'
 import { IncomePage } from './pages/IncomePage'
 import { SettingsPage } from './pages/SettingsPage'
@@ -20,6 +21,8 @@ import { tx } from './utils/i18n'
 import { isGitHubPagesRuntime } from './utils/runtime'
 import dashboardIconDark from '../redesign_icons/dashboard_dark.png'
 import dashboardIconLight from '../redesign_icons/dashboard_light.png'
+import expenseIconDark from '../redesign_icons/expense_dark.png'
+import expenseIconLight from '../redesign_icons/expense_light.png'
 import houseIconDark from '../redesign_icons/house_dark.png'
 import houseIconLight from '../redesign_icons/house_light.png'
 import incomeIconDark from '../redesign_icons/income_dark.png'
@@ -35,6 +38,14 @@ import subsIconLight from '../redesign_icons/subs_light.png'
 
 let startupUpdateCheckTriggered = false
 const DESKTOP_RELEASES_URL = 'https://github.com/xanoahax/Financify.io/releases'
+
+interface NavItem {
+  to: string
+  label: string
+  iconDark?: string
+  iconLight?: string
+  glyph?: string
+}
 
 export default function App(): JSX.Element {
   const {
@@ -126,9 +137,10 @@ export default function App(): JSX.Element {
     language,
   })
 
-  const navItems = [
+  const navItems: NavItem[] = [
     { to: '/dashboard', label: t('Übersicht', 'Overview'), iconDark: dashboardIconDark, iconLight: dashboardIconLight },
     { to: '/income', label: t('Einkommen', 'Income'), iconDark: incomeIconDark, iconLight: incomeIconLight },
+    { to: '/expenses', label: t('Ausgaben', 'Expenses'), iconDark: expenseIconDark, iconLight: expenseIconLight },
     { to: '/subscriptions', label: t('Abo-Tracker', 'Subscription tracker'), iconDark: subsIconDark, iconLight: subsIconLight },
     { to: '/households', label: t('Haushaltskosten', 'Household costs'), iconDark: houseIconDark, iconLight: houseIconLight },
     { to: '/stats', label: t('Statistiken', 'Statistics'), iconDark: statsIconDark, iconLight: statsIconLight },
@@ -157,6 +169,7 @@ export default function App(): JSX.Element {
   const dashboardQuickActions: DashboardQuickAction[] = useMemo(
     () => [
       { id: 'dash-income', label: t('Einkommen hinzufügen', 'Add income'), run: () => navigate('/income?quickAdd=income') },
+      { id: 'dash-expense', label: t('Ausgabe hinzufügen', 'Add expense'), run: () => navigate('/expenses?quickAdd=expense') },
       { id: 'dash-shift', label: t('Dienst loggen', 'Log shift'), run: () => navigate('/income?quickAdd=shift') },
       { id: 'dash-subscription', label: t('Abo hinzufügen', 'Add subscription'), run: () => navigate('/subscriptions?quickAdd=subscription') },
       { id: 'dash-household-cost', label: t('Haushaltskosten hinzufügen', 'Add household cost'), run: () => navigate('/households?quickAdd=cost') },
@@ -260,19 +273,25 @@ export default function App(): JSX.Element {
                 className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}
               >
                 {({ isActive }) => {
-                  const iconSrc =
-                    settings.theme === 'dark'
-                      ? isActive
-                        ? item.iconDark
-                        : item.iconLight
-                      : isActive
-                        ? item.iconLight
-                        : item.iconDark
-
                   return (
                     <>
                       <span className="nav-icon" aria-hidden="true">
-                        <img src={iconSrc} alt="" />
+                        {item.iconDark && item.iconLight ? (
+                          <img
+                            src={
+                              settings.theme === 'dark'
+                                ? isActive
+                                  ? item.iconDark
+                                  : item.iconLight
+                                : isActive
+                                  ? item.iconLight
+                                  : item.iconDark
+                            }
+                            alt=""
+                          />
+                        ) : (
+                          <span className="nav-icon-glyph">{item.glyph}</span>
+                        )}
                       </span>
                       <span className="nav-label">{item.label}</span>
                     </>
@@ -332,6 +351,7 @@ export default function App(): JSX.Element {
               <Route path="/subscriptions" element={<SubscriptionsPage />} />
               <Route path="/households" element={<HouseholdsPage />} />
               <Route path="/income" element={<IncomePage />} />
+              <Route path="/expenses" element={<ExpensesPage />} />
               <Route path="/stats" element={<StatsPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />

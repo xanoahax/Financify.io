@@ -4,7 +4,7 @@ import { DonutChart } from '../components/DonutChart'
 import { LineChart } from '../components/LineChart'
 import { useCardRowStagger } from '../hooks/useCardRowStagger'
 import { useAppContext } from '../state/useAppContext'
-import { addDays, endOfMonth, monthLabel, startOfMonth, todayString } from '../utils/date'
+import { addMonths, endOfMonth, monthLabel, startOfMonth, todayString } from '../utils/date'
 import { formatMoney, toPercent } from '../utils/format'
 import {
   buildFixedSalaryIncomeTemplateEntries,
@@ -66,8 +66,10 @@ export function DashboardPage({ quickActions }: DashboardPageProps): JSX.Element
     const allIncomeEntries = [...incomeEntries, ...buildFixedSalaryIncomeTemplateEntries(settings.shiftJobs)]
     const monthIncomeEntries = materializeIncomeEntriesForRange(allIncomeEntries, startOfMonth(today), endOfMonth(today))
     const monthIncome = sumIncome(monthIncomeEntries)
-    const rollingIncomeEntries = materializeIncomeEntriesForRange(allIncomeEntries, addDays(today, -365), today)
-    const incomeSeriesRaw = incomeByMonth(rollingIncomeEntries).slice(-12)
+    const incomeTrendRangeEnd = endOfMonth(today)
+    const incomeTrendRangeStart = startOfMonth(addMonths(today, -11))
+    const incomeTrendEntries = materializeIncomeEntriesForRange(allIncomeEntries, incomeTrendRangeStart, incomeTrendRangeEnd)
+    const incomeSeriesRaw = incomeByMonth(incomeTrendEntries).slice(-12)
     const incomeSeries = incomeSeriesRaw.map((item) => ({
       label: monthLabel(item.month, monthLocale),
       value: item.value,

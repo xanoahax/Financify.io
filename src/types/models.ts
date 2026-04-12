@@ -42,6 +42,23 @@ export interface IncomeEntry {
   updatedAt: string
 }
 
+export type ExpenseRecurring = 'none' | 'weekly' | 'monthly' | 'custom'
+
+export interface ExpenseEntry {
+  id: string
+  amount: number
+  date: string
+  endDate?: string
+  title: string
+  category: string
+  tags: string[]
+  notes: string
+  recurring: ExpenseRecurring
+  recurringIntervalDays?: number
+  createdAt: string
+  updatedAt: string
+}
+
 export type Frequency = 'monthly' | 'yearly'
 export type EmploymentType = 'casual' | 'fixed'
 export type FixedPayInterval = 'monthly' | 'biweekly' | 'weekly'
@@ -217,6 +234,7 @@ export interface ProfileBackupPayload {
   backgroundImageDataUrl: string | null
   subscriptions: Subscription[]
   incomeEntries: IncomeEntry[]
+  expenseEntries: ExpenseEntry[]
   interestScenarios: InterestScenario[]
   households: Household[]
   householdMembers: HouseholdMember[]
@@ -239,6 +257,7 @@ export interface AppBackup {
   backgroundImageDataUrl?: string | null
   subscriptions?: Subscription[]
   incomeEntries?: IncomeEntry[]
+  expenseEntries?: ExpenseEntry[]
   interestScenarios?: InterestScenario[]
   households?: Household[]
   householdMembers?: HouseholdMember[]

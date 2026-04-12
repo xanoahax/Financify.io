@@ -1,6 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
 import { AnimatedNumber } from '../components/AnimatedNumber'
-import { BarChart } from '../components/BarChart'
 import { DonutChart } from '../components/DonutChart'
 import { StatCard } from '../components/StatCard'
 import { useCardRowStagger } from '../hooks/useCardRowStagger'
@@ -47,7 +46,7 @@ function incomeSourceLabel(entry: IncomeEntry, language: 'de' | 'en'): string {
 export function StatsPage(): JSX.Element {
   const { subscriptions, incomeEntries, settings } = useAppContext()
   const pageRef = useRef<HTMLElement | null>(null)
-  const [preset, setPreset] = useState<RangePreset>('12m')
+  const [preset, setPreset] = useState<RangePreset>('30d')
   const [customStart, setCustomStart] = useState(addDays(todayString(), -90))
   const [customEnd, setCustomEnd] = useState(todayString())
   const t = (de: string, en: string) => tx(settings.language, de, en)
@@ -129,12 +128,7 @@ export function StatsPage(): JSX.Element {
       </div>
       </section>
 
-      <section className="dashboard-grid">
-        <article className="card dashboard-card">
-          <h2>{t('Einkommenstrend', 'Income trend')}</h2>
-          <BarChart data={data.monthlyIncomeSeries} language={settings.language} />
-        </article>
-        <article className="card dashboard-card">
+      <section className="dashboard-grid">        <article className="card dashboard-card">
           <h2>{t('Einkommensquellen', 'Income sources')}</h2>
           <DonutChart
             data={data.sourceSeries}
@@ -142,7 +136,7 @@ export function StatsPage(): JSX.Element {
             valueFormatter={(value) => formatMoney(value, settings.currency, settings.privacyHideAmounts)}
           />
         </article>
-        <article className="card dashboard-card card-span-2">
+        <article className="card dashboard-card">
           <h2>{t('Abo-Kategorien', 'Subscription categories')}</h2>
           <DonutChart
             data={data.categorySeries}
@@ -155,3 +149,5 @@ export function StatsPage(): JSX.Element {
     </section>
   )
 }
+
+

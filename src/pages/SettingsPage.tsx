@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import packageJson from '../../package.json'
 import { useCardRowStagger } from '../hooks/useCardRowStagger'
 import { useGuardedBackdropClose } from '../hooks/useGuardedBackdropClose'
@@ -750,6 +751,14 @@ export function SettingsPage(): JSX.Element {
 
   useCardRowStagger(pageRef)
 
+  const openIssueReport = useCallback(async (): Promise<void> => {
+    try {
+      await openUrl(REPORT_ISSUE_URL)
+    } catch {
+      window.open(REPORT_ISSUE_URL, '_blank', 'noopener,noreferrer')
+    }
+  }, [])
+
   return (
     <section ref={pageRef} className="page">
       <header className="page-header">
@@ -967,8 +976,8 @@ export function SettingsPage(): JSX.Element {
             <p className="danger-zone-title">{t('Gefahrenbereich', 'Danger Zone')}</p>
             <p className="muted">
               {t(
-                'Löscht alle lokalen Daten des aktiven Profils: Abos, Einkommen, Einstellungen und Hintergrundbild.',
-                'Deletes all local data of the active profile: subscriptions, income, settings and background image.',
+                'Löscht alle lokalen Daten des aktiven Profils: Abos, Einkommen, Ausgaben, Einstellungen und Hintergrundbild.',
+                'Deletes all local data of the active profile: subscriptions, income, expenses, settings and background image.',
               )}
             </p>
             <button type="button" className="button button-danger" onClick={() => setConfirmClearAllData(true)}>
@@ -978,9 +987,9 @@ export function SettingsPage(): JSX.Element {
         </article>
       </section>
       <div className="settings-footer-link-row">
-        <a className="button button-tertiary settings-footer-link" href={REPORT_ISSUE_URL} target="_blank" rel="noreferrer">
+        <button type="button" className="button button-tertiary settings-footer-link" onClick={() => void openIssueReport()}>
           {t('Problem melden', 'Report issue')}
-        </a>
+        </button>
       </div>
 
       {jobModalOpen ? (
@@ -1358,6 +1367,7 @@ export function SettingsPage(): JSX.Element {
     </section>
   )
 }
+
 
 
 

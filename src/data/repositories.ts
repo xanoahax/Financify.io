@@ -1,4 +1,5 @@
 import type {
+  ExpenseEntry,
   Household,
   HouseholdCost,
   HouseholdCostSplit,
@@ -18,6 +19,7 @@ interface CacheStore<T> {
 interface ProfileRepositoryCache {
   subscriptions: CacheStore<Subscription>
   incomeEntries: CacheStore<IncomeEntry>
+  expenseEntries: CacheStore<ExpenseEntry>
   interestScenarios: CacheStore<InterestScenario>
   households: CacheStore<Household>
   householdMembers: CacheStore<HouseholdMember>
@@ -36,6 +38,7 @@ function getProfileCache(profileId: string): ProfileRepositoryCache {
   const created: ProfileRepositoryCache = {
     subscriptions: { data: null },
     incomeEntries: { data: null },
+    expenseEntries: { data: null },
     interestScenarios: { data: null },
     households: { data: null },
     householdMembers: { data: null },
@@ -127,6 +130,37 @@ export async function listIncomeEntries(profileId: string): Promise<IncomeEntry[
     const rows = await db.getAll('incomeEntries')
     return rows.sort((a, b) => b.date.localeCompare(a.date))
   })
+}
+
+export async function listExpenseEntries(profileId: string): Promise<ExpenseEntry[]> {
+  return getAllCached(profileId, 'expenseEntries', async () => {
+    const db = await getDb(profileId)
+    const rows = await db.getAll('expenseEntries')
+    return rows.sort((a, b) => b.date.localeCompare(a.date))
+  })
+}
+
+export async function saveExpenseEntry(profileId: string, entry: ExpenseEntry): Promise<void> {
+  const db = await getDb(profileId)
+  await db.put('expenseEntries', entry)
+  markDirty(profileId, 'expenseEntries')
+}
+
+export async function removeExpenseEntry(profileId: string, id: string): Promise<void> {
+  const db = await getDb(profileId)
+  await db.delete('expenseEntries', id)
+  markDirty(profileId, 'expenseEntries')
+}
+
+export async function replaceExpenseEntries(profileId: string, entries: ExpenseEntry[]): Promise<void> {
+  const db = await getDb(profileId)
+  const tx = db.transaction('expenseEntries', 'readwrite')
+  await tx.store.clear()
+  for (const item of entries) {
+    await tx.store.put(item)
+  }
+  await tx.done
+  markDirty(profileId, 'expenseEntries')
 }
 
 export async function saveIncomeEntry(profileId: string, entry: IncomeEntry): Promise<void> {
