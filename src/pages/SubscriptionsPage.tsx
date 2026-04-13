@@ -349,7 +349,7 @@ export function SubscriptionsPage(): JSX.Element {
 
   return (
     <section ref={pageRef} className="page">
-      <section className="page-top-row">
+      <section className="page-top-row page-top-row-dashboard-align">
       <header className="page-header page-header-compact">
         <div className="page-title-actions">
           <h1>{t('Abo-Tracker', 'Subscription tracker')}</h1>
@@ -638,14 +638,14 @@ export function SubscriptionsPage(): JSX.Element {
                           </button>
                         )}
                         {item.status !== 'cancelled' ? (
-                          <button type="button" className="icon-button table-action-button" onClick={() => openCancelConfirmation(item)} aria-label={t('K?ndigen', 'Cancel subscription')} title={t('K?ndigen', 'Cancel subscription')}>
+                          <button type="button" className="icon-button table-action-button" onClick={() => openCancelConfirmation(item)} aria-label={t('Kündigen', 'Cancel subscription')} title={t('Kündigen', 'Cancel subscription')}>
                             <svg viewBox="0 0 24 24" aria-hidden="true" className="table-action-icon">
                               <circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" strokeWidth="1.8" />
                               <path d="M9 15 15 9" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
                             </svg>
                           </button>
                         ) : null}
-                        <button type="button" className="icon-button table-action-button table-action-button-danger" onClick={() => openDeleteConfirmation(item)} aria-label={t('L?schen', 'Delete')} title={t('L?schen', 'Delete')}>
+                        <button type="button" className="icon-button table-action-button table-action-button-danger" onClick={() => openDeleteConfirmation(item)} aria-label={t('Löschen', 'Delete')} title={t('Löschen', 'Delete')}>
                           <svg viewBox="0 0 24 24" aria-hidden="true" className="table-action-icon">
                             <path d="M6 7h12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
                             <path d="M9 7V5h6v2" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />

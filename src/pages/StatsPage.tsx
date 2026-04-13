@@ -95,7 +95,7 @@ export function StatsPage(): JSX.Element {
 
   return (
     <section ref={pageRef} className="page">
-      <section className="page-top-row">
+      <section className="page-top-row page-top-row-dashboard-align">
       <header className="page-header page-header-compact">
         <h1>{t('Statistiken', 'Statistics')}</h1>
         <div className="page-actions">

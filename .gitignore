@@ -35,3 +35,8 @@ src-tauri/gen/
 *.app.tar.gz
 *.sig
 .tauri/
+
+# Local markdown notes/concepts in repo root
+/*.md
+!/README.md
+!/CHANGELOG.md

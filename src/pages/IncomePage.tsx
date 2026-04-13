@@ -592,7 +592,7 @@ export function IncomePage(): JSX.Element {
 
   return (
     <section ref={pageRef} className="page">
-      <section className="page-top-row">
+      <section className="page-top-row page-top-row-dashboard-align">
       <header className="page-header page-header-compact">
         <div className="page-title-actions">
           <h1>{t('Einkommen', 'Income')}</h1>
@@ -998,7 +998,7 @@ export function IncomePage(): JSX.Element {
                             <path d="m12 6 4 4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
                           </svg>
                         </button>
-                        <button type="button" className="icon-button entry-action-button entry-action-button-danger" onClick={() => openDeleteConfirmation(item)} aria-label={t('L?schen', 'Delete')} title={t('L?schen', 'Delete')}>
+                        <button type="button" className="icon-button entry-action-button entry-action-button-danger" onClick={() => openDeleteConfirmation(item)} aria-label={t('Löschen', 'Delete')} title={t('Löschen', 'Delete')}>
                           <svg viewBox="0 0 24 24" aria-hidden="true" className="entry-action-icon">
                             <path d="M6 7h12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
                             <path d="M9 7V5h6v2" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />

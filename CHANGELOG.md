@@ -3,6 +3,11 @@
 All notable changes for desktop releases are documented here.  
 Each release must have a matching section (`## vX.Y.Z`) so GitHub release notes and the in-app update dialog stay in sync.
 
+## v0.11.2
+- Cleaned up the release repository by removing local planning markdown files from GitHub while keeping only `README.md` and `CHANGELOG.md` tracked.
+- Improved dashboard responsiveness with a constrained content width, a cleaner two-column top layout, and KPI alignment that stays anchored over the second card column on wider windows.
+- Fixed remaining broken German action labels in income and subscription flows and polished page-level KPI alignment across core sections.
+
 ## v0.11.1
 - Added a new **Expenses** page for tracking everyday spending outside of household costs, with month/year views, recurring expense support, trend and breakdown charts, and searchable entries.
 - Improved consistency across income and statistics calculations so current-month totals and dashboard/statistics cashflow figures include the same relevant data sources.

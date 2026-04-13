@@ -101,11 +101,11 @@ export function DashboardPage({ quickActions }: DashboardPageProps): JSX.Element
   return (
     <section ref={pageRef} className="page dashboard-page">
       <section className="dashboard-top-row">
-        <div className="dashboard-hero">
+        <div className="dashboard-top-left">
+          <div className="dashboard-hero">
           <h1>{t('Welcome back!', 'Welcome back!')}</h1>
           <p className="dashboard-hero-copy">{t('Deine Finanzen auf einen Blick.', 'Your finances at a glance.')}</p>
         </div>
-        <div className="dashboard-summary-spacer" aria-hidden="true" />
         <div className="dashboard-hero-actions" ref={quickActionsRef}>
           <div className="shell-plus-cluster">
             <button
@@ -145,6 +145,7 @@ export function DashboardPage({ quickActions }: DashboardPageProps): JSX.Element
               </div>
             ) : null}
           </div>
+        </div>
         </div>
         <div className="dashboard-summary-grid" aria-label={t('Kennzahlen', 'Key metrics')}>
           <article className="dashboard-summary">

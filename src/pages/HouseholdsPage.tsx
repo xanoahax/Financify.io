@@ -298,7 +298,7 @@ export function HouseholdsPage(): JSX.Element {
 
   return (
     <section ref={pageRef} className="page">
-      <section className="page-top-row">
+      <section className="page-top-row page-top-row-dashboard-align">
       <header className="page-header page-header-compact">
         <div className="page-title-actions">
           <h1>{t('Haushaltskosten', 'Household costs')}</h1>
