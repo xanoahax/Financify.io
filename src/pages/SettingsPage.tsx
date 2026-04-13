@@ -882,7 +882,7 @@ export function SettingsPage(): JSX.Element {
               {t('Job hinzufügen', 'Add job')}
             </button>
           </header>
-          <p className="muted">
+          <p className="muted settings-card-intro">
             {t(
               'Lege Jobs als fallweise oder fixe Anstellung an. Fallweise Jobs können als Dienste geloggt werden, fixe Jobs werden automatisch als wiederkehrendes Einkommen berücksichtigt.',
               'Configure jobs as casual or fixed employment. Casual jobs can be logged as shifts, fixed jobs are counted automatically as recurring income.',
