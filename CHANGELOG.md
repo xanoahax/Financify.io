@@ -3,6 +3,11 @@
 All notable changes for desktop releases are documented here.  
 Each release must have a matching section (`## vX.Y.Z`) so GitHub release notes and the in-app update dialog stay in sync.
 
+## v0.11.4
+- Prepared the desktop release pipeline for a first macOS build alongside Windows, including DMG output and updater-ready macOS artifacts for future in-app update testing.
+- Added ad-hoc macOS signing configuration so the new macOS bundles can be generated consistently during CI without changing the existing Windows release flow.
+- Included the latest small UI polish from the current main branch, including improved spacing in the Settings jobs card.
+
 ## v0.11.3
 - Fixed desktop issue reporting in the installed app by enabling the required Tauri opener permission so `Problem melden` opens in the user's default browser.
 - Added a short dark splash intro with centered branding before login/app load, including a smoother handoff into the main UI animations.

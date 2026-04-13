@@ -10,8 +10,11 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  prepare_release:
     runs-on: windows-latest
+    outputs:
+      tag: ${{ steps.release_tag.outputs.tag }}
+      release_body: ${{ steps.release_notes.outputs.release_body }}
 
     steps:
       - name: Checkout
@@ -58,6 +61,27 @@ jobs:
           $releaseBody >> $env:GITHUB_OUTPUT
           "EOF" >> $env:GITHUB_OUTPUT
 
+  build_release:
+    needs: prepare_release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            args: ""
+            rust_target: ""
+          - runner: macos-latest
+            args: "--target aarch64-apple-darwin"
+            rust_target: "aarch64-apple-darwin"
+          - runner: macos-latest
+            args: "--target x86_64-apple-darwin"
+            rust_target: "x86_64-apple-darwin"
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -66,6 +90,15 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Install macOS Rust target
+        if: matrix.rust_target != ''
+        run: rustup target add ${{ matrix.rust_target }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
 
       - name: Install dependencies
         run: npm ci
@@ -77,15 +110,23 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ steps.release_tag.outputs.tag }}
-          releaseName: financify.io ${{ steps.release_tag.outputs.tag }}
-          releaseBody: ${{ steps.release_notes.outputs.release_body }}
+          tagName: ${{ needs.prepare_release.outputs.tag }}
+          releaseName: financify.io ${{ needs.prepare_release.outputs.tag }}
+          releaseBody: ${{ needs.prepare_release.outputs.release_body }}
           releaseDraft: true
           prerelease: false
+          args: ${{ matrix.args }}
 
+  publish_release:
+    needs:
+      - prepare_release
+      - build_release
+    runs-on: windows-latest
+
+    steps:
       - name: Publish release
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release edit "${{ steps.release_tag.outputs.tag }}" --draft=false --latest
+          gh release edit "${{ needs.prepare_release.outputs.tag }}" --draft=false --latest
