@@ -10,6 +10,13 @@ function easeOutCubic(progress: number): number {
   return 1 - (1 - progress) ** 3
 }
 
+function isStartupSplashActive(): boolean {
+  if (typeof document === 'undefined') {
+    return false
+  }
+  return document.documentElement.dataset.startupSplash === 'active'
+}
+
 export function AnimatedNumber({ value, formatter, durationMs = 420 }: AnimatedNumberProps): JSX.Element {
   const prefersReducedMotion = useMemo(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
@@ -17,12 +24,35 @@ export function AnimatedNumber({ value, formatter, durationMs = 420 }: AnimatedN
     }
     return window.matchMedia('(prefers-reduced-motion: reduce)').matches
   }, [])
+  const [startupSplashActive, setStartupSplashActive] = useState(() => isStartupSplashActive())
+  const [frozenDisplayValue, setFrozenDisplayValue] = useState(0)
   const [displayValue, setDisplayValue] = useState(0)
   const previousValueRef = useRef(0)
 
   useEffect(() => {
+    const syncStartupSplash = () => {
+      const active = isStartupSplashActive()
+      setStartupSplashActive(active)
+      if (active) {
+        setFrozenDisplayValue(previousValueRef.current)
+      }
+    }
+
+    syncStartupSplash()
+    window.addEventListener('financify:startup-splash-change', syncStartupSplash)
+
+    return () => {
+      window.removeEventListener('financify:startup-splash-change', syncStartupSplash)
+    }
+  }, [])
+
+  useEffect(() => {
     if (prefersReducedMotion) {
       previousValueRef.current = value
+      return
+    }
+
+    if (startupSplashActive) {
       return
     }
 
@@ -52,9 +82,9 @@ export function AnimatedNumber({ value, formatter, durationMs = 420 }: AnimatedN
     return () => {
       window.cancelAnimationFrame(frameId)
     }
-  }, [durationMs, prefersReducedMotion, value])
+  }, [durationMs, prefersReducedMotion, startupSplashActive, value])
 
-  const renderedValue = prefersReducedMotion ? value : displayValue
+  const renderedValue = prefersReducedMotion ? value : startupSplashActive ? frozenDisplayValue : displayValue
 
   return <>{formatter ? formatter(renderedValue) : Math.round(renderedValue)}</>
 }

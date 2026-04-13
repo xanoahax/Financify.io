@@ -1,6 +1,6 @@
 [package]
 name = "financify-desktop"
-version = "0.11.2"
+version = "0.11.3"
 description = "financify.io desktop app"
 authors = ["you"]
 license = ""

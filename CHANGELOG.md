@@ -3,6 +3,10 @@
 All notable changes for desktop releases are documented here.  
 Each release must have a matching section (`## vX.Y.Z`) so GitHub release notes and the in-app update dialog stay in sync.
 
+## v0.11.3
+- Fixed desktop issue reporting in the installed app by enabling the required Tauri opener permission so `Problem melden` opens in the user's default browser.
+- Added a short dark splash intro with centered branding before login/app load, including a smoother handoff into the main UI animations.
+
 ## v0.11.2
 - Cleaned up the release repository by removing local planning markdown files from GitHub while keeping only `README.md` and `CHANGELOG.md` tracked.
 - Improved dashboard responsiveness with a constrained content width, a cleaner two-column top layout, and KPI alignment that stays anchored over the second card column on wider windows.

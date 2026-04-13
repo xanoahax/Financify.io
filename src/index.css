@@ -74,6 +74,53 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+.startup-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  background: #131313;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--startup-splash-fade-ms, 620ms) ease;
+}
+
+.startup-splash-visible {
+  opacity: 1;
+}
+
+.startup-splash-logo {
+  width: min(120px, 18vw);
+  height: auto;
+  display: block;
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.startup-splash-mark {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+}
+
+.startup-splash-wordmark {
+  opacity: 0;
+  color: #f3f3f1;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  transform: translateY(6px);
+}
+
+.startup-splash-visible .startup-splash-logo {
+  animation: startup-splash-logo-in 240ms ease-out 80ms forwards;
+}
+
+.startup-splash-visible .startup-splash-wordmark {
+  animation: startup-splash-logo-in 240ms ease-out 140ms forwards;
+}
+
 @keyframes fade-in {
   from {
     opacity: 0;
@@ -753,6 +800,10 @@ td small {
   padding-bottom: var(--space-2);
 }
 
+.app-shell.app-intro-active .card {
+  animation-play-state: paused;
+}
+
 .settings-footer-link {
   min-height: 0;
   padding: 0;
@@ -1409,6 +1460,17 @@ input[type='checkbox']:disabled {
     transform: translateY(3px);
   }
 
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes startup-splash-logo-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
   to {
     opacity: 1;
     transform: translateY(0);

@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState } from 'react'
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { BackgroundLayers } from './components/BackgroundLayers'
 import { LoginScreen } from './components/LoginScreen'
@@ -29,6 +29,7 @@ import incomeIconDark from '../redesign_icons/income_dark.png'
 import incomeIconLight from '../redesign_icons/income_light.png'
 import logoutIconDark from '../redesign_icons/logout_dark.png'
 import logoutIconLight from '../redesign_icons/logout_light.png'
+import startupLogoLight from '../redesign_icons/mainlogo_light.png'
 import logoForLightMode from '../redesign_icons/mainlogo_dark.png'
 import logoForDarkMode from '../redesign_icons/mainlogo_light.png'
 import statsIconDark from '../redesign_icons/stats_dark.png'
@@ -38,6 +39,8 @@ import subsIconLight from '../redesign_icons/subs_light.png'
 
 let startupUpdateCheckTriggered = false
 const DESKTOP_RELEASES_URL = 'https://github.com/xanoahax/Financify.io/releases'
+const STARTUP_SPLASH_VISIBLE_MS = 670
+const STARTUP_SPLASH_FADE_MS = 620
 
 interface NavItem {
   to: string
@@ -77,9 +80,12 @@ export default function App(): JSX.Element {
   } = useAppContext()
   const [showDesktopDownloadHint, setShowDesktopDownloadHint] = useState(() => isGitHubPagesRuntime())
   const [isSessionLoggedOut, setIsSessionLoggedOut] = useState(true)
+  const [renderStartupSplash, setRenderStartupSplash] = useState(false)
+  const [startupSplashVisible, setStartupSplashVisible] = useState(false)
   const [unlockSecret, setUnlockSecret] = useState('')
   const [unlockError, setUnlockError] = useState('')
   const [unlocking, setUnlocking] = useState(false)
+  const startupSplashStartedRef = useRef(false)
   const navigate = useNavigate()
   const showLoginScreen = isProfileLocked || isSessionLoggedOut
   const { effectiveSettings, captureCurrentVisualSnapshot, clearCurrentVisualSnapshot } = useLockScreenVisuals({
@@ -166,6 +172,42 @@ export default function App(): JSX.Element {
     void checkForUpdates()
   }, [checkForUpdates, loading, updatesSupported])
 
+  useEffect(() => {
+    if (loading || startupSplashStartedRef.current) {
+      return
+    }
+
+    startupSplashStartedRef.current = true
+    setRenderStartupSplash(true)
+    setStartupSplashVisible(true)
+
+    const fadeTimer = window.setTimeout(() => {
+      setStartupSplashVisible(false)
+    }, STARTUP_SPLASH_VISIBLE_MS)
+
+    const hideTimer = window.setTimeout(() => {
+      setRenderStartupSplash(false)
+    }, STARTUP_SPLASH_VISIBLE_MS + STARTUP_SPLASH_FADE_MS)
+
+    return () => {
+      window.clearTimeout(fadeTimer)
+      window.clearTimeout(hideTimer)
+    }
+  }, [loading])
+
+  useEffect(() => {
+    document.documentElement.dataset.startupSplash = renderStartupSplash
+      ? startupSplashVisible
+        ? 'active'
+        : 'fading'
+      : 'done'
+    window.dispatchEvent(new CustomEvent('financify:startup-splash-change'))
+
+    return () => {
+      delete document.documentElement.dataset.startupSplash
+    }
+  }, [renderStartupSplash, startupSplashVisible])
+
   const dashboardQuickActions: DashboardQuickAction[] = useMemo(
     () => [
       {
@@ -227,10 +269,24 @@ export default function App(): JSX.Element {
     )
   }
 
+  const startupSplash = renderStartupSplash ? (
+    <div
+      className={`startup-splash${startupSplashVisible ? ' startup-splash-visible' : ''}`}
+      style={{ ['--startup-splash-fade-ms' as string]: `${STARTUP_SPLASH_FADE_MS}ms` }}
+      aria-hidden="true"
+    >
+      <div className="startup-splash-mark">
+        <img className="startup-splash-logo" src={startupLogoLight} alt="" />
+        <span className="startup-splash-wordmark">Financify.io</span>
+      </div>
+    </div>
+  ) : null
+
   if (needsOnboarding) {
     return (
       <>
         <BackgroundLayers />
+        {startupSplash}
         <main className="loading-shell">
           <OnboardingCard
             key={activeProfileId}
@@ -256,6 +312,7 @@ export default function App(): JSX.Element {
     return (
       <>
         <BackgroundLayers />
+        {startupSplash}
         <LoginScreen
           profiles={profiles}
           activeProfileId={activeProfileId}
@@ -278,8 +335,9 @@ export default function App(): JSX.Element {
   return (
     <>
       <BackgroundLayers />
+      {startupSplash}
 
-      <div className="app-shell">
+      <div className={`app-shell${startupSplashVisible ? ' app-intro-active' : ''}`}>
         <div className="shell-brand" aria-hidden="true">
           <img className="shell-app-logo" src={shellLogo} alt="" />
         </div>
